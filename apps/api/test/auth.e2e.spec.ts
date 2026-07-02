@@ -36,6 +36,8 @@ describe('Auth API', () => {
   });
 
   it('validates DTOs before accepting registration', async () => {
+    const existingKeys = await redis.keys('auth:rate:register:*');
+    if (existingKeys.length) await redis.del(...existingKeys);
     const response = await request(app.getHttpServer()).post('/api/v1/auth/register').send({ email: 'bad', password: 'short' });
     expect(response.status).toBe(422);
     expect(response.body.error.code).toBe('VALIDATION_FAILED');

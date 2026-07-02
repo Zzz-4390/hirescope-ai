@@ -22,6 +22,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = typeof details.message === 'string' ? details.message : status === 422 ? '请求参数校验失败' : message;
         retryAfter = typeof details.retryAfter === 'number' ? details.retryAfter : undefined;
       }
+      if (status === HttpStatus.PAYLOAD_TOO_LARGE && code === 'REQUEST_FAILED') {
+        code = 'PAYLOAD_TOO_LARGE';
+        message = '上传文件不能超过 50MB';
+      }
     }
     if (retryAfter) response.setHeader('Retry-After', String(retryAfter));
     response.status(status).json({ error: { code, message, requestId } });

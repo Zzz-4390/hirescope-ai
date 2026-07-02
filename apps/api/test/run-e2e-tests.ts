@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { rmSync } from 'node:fs';
 import Redis from 'ioredis';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -17,7 +18,9 @@ if (!['localhost', '127.0.0.1', '::1'].includes(redis.hostname) || redis.pathnam
 
 const root = resolve(__dirname, '../../..');
 const requiredRedisUrl = redisUrl;
-const environment = { ...process.env, DATABASE_URL: databaseUrl, REDIS_URL: redisUrl };
+const testStorageRoot = resolve(root, 'storage/test-e2e');
+rmSync(testStorageRoot, { recursive: true, force: true });
+const environment = { ...process.env, NODE_ENV: 'test', DATABASE_URL: databaseUrl, REDIS_URL: redisUrl, STORAGE_ROOT: testStorageRoot };
 const command = 'pnpm';
 function run(args: string[]): void {
   const result = spawnSync(command, args, { cwd: root, env: environment, shell: process.platform === 'win32', stdio: 'inherit' });
@@ -32,7 +35,7 @@ async function main(): Promise<void> {
   await redisClient.connect();
   await redisClient.flushdb();
   await redisClient.quit();
-  run(['exec', 'vitest', 'run', 'apps/api/test']);
+  run(['exec', 'vitest', 'run', 'apps/api/test', '--maxWorkers=1']);
 }
 
 void main();
