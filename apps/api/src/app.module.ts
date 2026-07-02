@@ -7,6 +7,8 @@ import { RequestIdMiddleware } from './common/http/request-id.middleware';
 import { validateEnvironment } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
 import { RedisModule } from './redis/redis.module';
+import { ProjectsModule } from './projects/projects.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { RedisModule } from './redis/redis.module';
     PrismaModule,
     RedisModule,
     AuthModule,
+    TasksModule,
+    ProjectsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
