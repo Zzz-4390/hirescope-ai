@@ -10,6 +10,10 @@
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
     "db:test": "tsx --env-file=.env prisma/tests/run-database-tests.ts prisma/tests",
+    "api:typecheck": "pnpm --filter @hirescope/api typecheck",
+    "api:test": "pnpm --filter @hirescope/api test",
+    "api:test:e2e": "pnpm --filter @hirescope/api test:e2e",
+    "api:build": "pnpm --filter @hirescope/api build",
     "infra:up": "docker compose up -d postgres redis",
     "infra:down": "docker compose down"
   },
@@ -20,7 +24,7 @@
     "@types/node": "^22.0.0",
     "prisma": "6.19.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.0.0",
+    "typescript": "5.9.3",
     "vitest": "^3.0.0"
   }
 }

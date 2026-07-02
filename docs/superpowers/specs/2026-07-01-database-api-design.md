@@ -472,6 +472,15 @@ Cookie、CORS 与 CSRF 规则：
 }
 ```
 
+Auth 实现约束：
+
+- 注册成功或邮箱已存在均返回 `202 { "accepted": true }`，注册接口不签发 Token，避免通过响应枚举邮箱。
+- 登录时不存在邮箱和密码错误必须执行同一 Argon2id verify 路径，并返回完全一致的 `401 INVALID_CREDENTIALS`。
+- register/login 的执行顺序固定为 DTO 校验、Redis 限流、AuthService、Argon2；禁止使用早于 ValidationPipe 的普通 Guard 实现这两个限流。
+- Refresh Cookie 名为 `__Secure-hirescope_refresh`，固定启用 `Secure + HttpOnly + SameSite=Lax`；浏览器本地联调使用 HTTPS Origin。
+- Refresh Token 为 `sessionId.verifier` 不透明随机值；Redis 仅保存 HMAC-SHA256 哈希。Rotation 使用 SessionService 内封装的 Lua `EVAL` 原子比较替换，旧 Token 比较失败不得删除当前 Session。
+- Auth E2E 仅允许 `TEST_DATABASE_URL` 指向本机 `hirescope_test`，并仅允许 `TEST_REDIS_URL=redis://localhost:6379/15`；禁止回退到开发数据库或执行 `FLUSHALL`。
+
 ### 6.2 项目
 
 | 方法 | 路径 | 说明 |
