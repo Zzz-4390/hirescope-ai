@@ -90,6 +90,7 @@ model Project {
   asyncTasks         AsyncTask[]
   aiCallLogs         AiCallLog[]
 
+  @@unique([id, userId])
   @@index([userId, createdAt])
   @@index([userId, status])
   @@index([userId, fileHash])
@@ -131,6 +132,7 @@ model CodeReview {
   user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   asyncTasks     AsyncTask[]
 
+  @@unique([id, projectId, userId])
   @@index([userId, createdAt])
   @@index([projectId, status])
   @@map("code_reviews")
@@ -159,6 +161,8 @@ model Interview {
   report         InterviewReport?
   asyncTasks     AsyncTask[]
 
+  @@unique([id, userId])
+  @@unique([id, projectId, userId])
   @@index([userId, createdAt])
   @@index([projectId, status])
   @@map("interviews")
@@ -177,6 +181,7 @@ model InterviewQuestion {
   answer          InterviewAnswer?
 
   @@unique([interviewId, sequence])
+  @@unique([id, interviewId])
   @@map("interview_questions")
 }
 

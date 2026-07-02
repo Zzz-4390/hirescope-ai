@@ -19,6 +19,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const command = 'pnpm';
+const testTarget = process.argv[2] ?? 'prisma/tests';
 const environment = {
   ...process.env,
   DATABASE_URL: testDatabaseUrl,
@@ -41,4 +42,4 @@ function run(args: string[]): void {
 }
 
 run(['prisma', 'migrate', 'reset', '--force']);
-run(['vitest', 'run', 'prisma/tests/database-constraints.spec.ts']);
+run(['vitest', 'run', testTarget]);

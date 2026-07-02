@@ -14,6 +14,8 @@ const prisma = new PrismaClient();
 describe('database constraints', () => {
   const userId = randomUUID();
   const projectId = randomUUID();
+  const otherUserId = randomUUID();
+  const otherProjectId = randomUUID();
 
   beforeAll(async () => {
     await prisma.user.create({
@@ -35,10 +37,28 @@ describe('database constraints', () => {
         status: ProjectStatus.UPLOADED,
       },
     });
+    await prisma.user.create({
+      data: {
+        id: otherUserId,
+        email: `db-${otherUserId}@example.com`,
+        passwordHash: 'test-only-hash',
+      },
+    });
+    await prisma.project.create({
+      data: {
+        id: otherProjectId,
+        userId: otherUserId,
+        name: 'Other user constraint fixture',
+        originalFileName: 'other-fixture.zip',
+        fileSize: 100n,
+        fileHash: 'b'.repeat(64),
+        status: ProjectStatus.UPLOADED,
+      },
+    });
   });
 
   afterAll(async () => {
-    await prisma.user.delete({ where: { id: userId } }).catch(() => undefined);
+    await prisma.user.deleteMany({ where: { id: { in: [userId, otherUserId] } } });
     await prisma.$disconnect();
   });
 
@@ -203,6 +223,217 @@ describe('database constraints', () => {
     await expect(
       prisma.asyncTask.create({
         data: { userId, type: TaskType.CODE_REVIEW, status: TaskStatus.PENDING },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a code review that references another user project', async () => {
+    await expect(
+      prisma.codeReview.create({
+        data: {
+          projectId: otherProjectId,
+          userId,
+          status: TaskStatus.PENDING,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects an interview that references another user project', async () => {
+    await expect(
+      prisma.interview.create({
+        data: {
+          projectId: otherProjectId,
+          userId,
+          title: 'Cross-user interview',
+          status: InterviewStatus.READY,
+          difficulty: InterviewDifficulty.MEDIUM,
+          questionCount: 5,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects an answer whose question belongs to another interview', async () => {
+    const questionInterview = await prisma.interview.create({
+      data: {
+        projectId,
+        userId,
+        title: 'Question owner interview',
+        status: InterviewStatus.IN_PROGRESS,
+        difficulty: InterviewDifficulty.MEDIUM,
+        questionCount: 5,
+      },
+    });
+    const answerInterview = await prisma.interview.create({
+      data: {
+        projectId,
+        userId,
+        title: 'Answer target interview',
+        status: InterviewStatus.IN_PROGRESS,
+        difficulty: InterviewDifficulty.MEDIUM,
+        questionCount: 5,
+      },
+    });
+    const question = await prisma.interviewQuestion.create({
+      data: {
+        interviewId: questionInterview.id,
+        sequence: 1,
+        category: 'database',
+        difficulty: InterviewDifficulty.MEDIUM,
+        question: 'Explain composite foreign keys.',
+        referencePoints: [],
+      },
+    });
+
+    await expect(
+      prisma.interviewAnswer.create({
+        data: {
+          questionId: question.id,
+          interviewId: answerInterview.id,
+          userId,
+          content: 'Cross-interview answer',
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects an answer whose user does not own the interview', async () => {
+    const interview = await prisma.interview.create({
+      data: {
+        projectId: otherProjectId,
+        userId: otherUserId,
+        title: 'Other user interview',
+        status: InterviewStatus.IN_PROGRESS,
+        difficulty: InterviewDifficulty.MEDIUM,
+        questionCount: 5,
+      },
+    });
+    const question = await prisma.interviewQuestion.create({
+      data: {
+        interviewId: interview.id,
+        sequence: 1,
+        category: 'database',
+        difficulty: InterviewDifficulty.MEDIUM,
+        question: 'Explain tenant ownership.',
+        referencePoints: [],
+      },
+    });
+
+    await expect(
+      prisma.interviewAnswer.create({
+        data: {
+          questionId: question.id,
+          interviewId: interview.id,
+          userId,
+          content: 'Cross-user answer',
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a report whose user does not own the interview', async () => {
+    const interview = await prisma.interview.create({
+      data: {
+        projectId: otherProjectId,
+        userId: otherUserId,
+        title: 'Other user report interview',
+        status: InterviewStatus.COMPLETED,
+        difficulty: InterviewDifficulty.MEDIUM,
+        questionCount: 5,
+      },
+    });
+
+    await expect(
+      prisma.interviewReport.create({
+        data: {
+          interviewId: interview.id,
+          userId,
+          overallScore: 80,
+          summary: 'Cross-user report',
+          dimensions: {},
+          questionReviews: [],
+          strengths: [],
+          improvements: [],
+          result: {},
+          model: 'test-only-model',
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a task that binds another user project', async () => {
+    await expect(
+      prisma.asyncTask.create({
+        data: {
+          userId,
+          projectId: otherProjectId,
+          type: TaskType.PROJECT_ANALYSIS,
+          status: TaskStatus.SUCCEEDED,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a task whose code review belongs to another project', async () => {
+    const secondProject = await prisma.project.create({
+      data: {
+        userId,
+        name: 'Task project mismatch fixture',
+        originalFileName: 'task-project.zip',
+        fileSize: 100n,
+        fileHash: 'c'.repeat(64),
+        status: ProjectStatus.COMPLETED,
+      },
+    });
+    const codeReview = await prisma.codeReview.create({
+      data: { projectId, userId, status: TaskStatus.PENDING },
+    });
+
+    await expect(
+      prisma.asyncTask.create({
+        data: {
+          userId,
+          projectId: secondProject.id,
+          codeReviewId: codeReview.id,
+          type: TaskType.CODE_REVIEW,
+          status: TaskStatus.SUCCEEDED,
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a task whose interview belongs to another project', async () => {
+    const secondProject = await prisma.project.create({
+      data: {
+        userId,
+        name: 'Interview task mismatch fixture',
+        originalFileName: 'interview-task.zip',
+        fileSize: 100n,
+        fileHash: 'd'.repeat(64),
+        status: ProjectStatus.COMPLETED,
+      },
+    });
+    const interview = await prisma.interview.create({
+      data: {
+        projectId,
+        userId,
+        title: 'Task interview fixture',
+        status: InterviewStatus.READY,
+        difficulty: InterviewDifficulty.MEDIUM,
+        questionCount: 5,
+      },
+    });
+
+    await expect(
+      prisma.asyncTask.create({
+        data: {
+          userId,
+          projectId: secondProject.id,
+          interviewId: interview.id,
+          type: TaskType.INTERVIEW_QUESTION_GENERATION,
+          status: TaskStatus.SUCCEEDED,
+        },
       }),
     ).rejects.toThrow();
   });

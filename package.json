@@ -9,7 +9,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
-    "db:test": "tsx --env-file=.env prisma/tests/run-database-tests.ts",
+    "db:test": "tsx --env-file=.env prisma/tests/run-database-tests.ts prisma/tests",
     "infra:up": "docker compose up -d postgres redis",
     "infra:down": "docker compose down"
   },

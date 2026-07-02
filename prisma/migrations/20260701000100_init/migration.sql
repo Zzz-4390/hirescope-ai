@@ -206,6 +206,9 @@ CREATE INDEX "projects_user_id_status_idx" ON "projects"("user_id", "status");
 CREATE INDEX "projects_user_id_file_hash_idx" ON "projects"("user_id", "file_hash");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "projects_id_user_id_key" ON "projects"("id", "user_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "project_analyses_project_id_key" ON "project_analyses"("project_id");
 
 -- CreateIndex
@@ -215,13 +218,25 @@ CREATE INDEX "code_reviews_user_id_created_at_idx" ON "code_reviews"("user_id", 
 CREATE INDEX "code_reviews_project_id_status_idx" ON "code_reviews"("project_id", "status");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "code_reviews_id_project_id_user_id_key" ON "code_reviews"("id", "project_id", "user_id");
+
+-- CreateIndex
 CREATE INDEX "interviews_user_id_created_at_idx" ON "interviews"("user_id", "created_at");
 
 -- CreateIndex
 CREATE INDEX "interviews_project_id_status_idx" ON "interviews"("project_id", "status");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "interviews_id_user_id_key" ON "interviews"("id", "user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "interviews_id_project_id_user_id_key" ON "interviews"("id", "project_id", "user_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "interview_questions_interview_id_sequence_key" ON "interview_questions"("interview_id", "sequence");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "interview_questions_id_interview_id_key" ON "interview_questions"("id", "interview_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "interview_answers_question_id_key" ON "interview_answers"("question_id");
@@ -321,6 +336,30 @@ ALTER TABLE "ai_call_logs" ADD CONSTRAINT "ai_call_logs_project_id_fkey" FOREIGN
 
 -- AddForeignKey
 ALTER TABLE "ai_call_logs" ADD CONSTRAINT "ai_call_logs_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "async_tasks"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "code_reviews" ADD CONSTRAINT "code_reviews_project_id_user_id_fkey" FOREIGN KEY ("project_id", "user_id") REFERENCES "projects"("id", "user_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "interviews" ADD CONSTRAINT "interviews_project_id_user_id_fkey" FOREIGN KEY ("project_id", "user_id") REFERENCES "projects"("id", "user_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "interview_answers" ADD CONSTRAINT "interview_answers_question_id_interview_id_fkey" FOREIGN KEY ("question_id", "interview_id") REFERENCES "interview_questions"("id", "interview_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "interview_answers" ADD CONSTRAINT "interview_answers_interview_id_user_id_fkey" FOREIGN KEY ("interview_id", "user_id") REFERENCES "interviews"("id", "user_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "interview_reports" ADD CONSTRAINT "interview_reports_interview_id_user_id_fkey" FOREIGN KEY ("interview_id", "user_id") REFERENCES "interviews"("id", "user_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "async_tasks" ADD CONSTRAINT "async_tasks_project_id_user_id_fkey" FOREIGN KEY ("project_id", "user_id") REFERENCES "projects"("id", "user_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "async_tasks" ADD CONSTRAINT "async_tasks_code_review_id_project_id_user_id_fkey" FOREIGN KEY ("code_review_id", "project_id", "user_id") REFERENCES "code_reviews"("id", "project_id", "user_id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddCompositeForeignKey
+ALTER TABLE "async_tasks" ADD CONSTRAINT "async_tasks_interview_id_project_id_user_id_fkey" FOREIGN KEY ("interview_id", "project_id", "user_id") REFERENCES "interviews"("id", "project_id", "user_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Database constraints that Prisma Schema cannot express.
 ALTER TABLE "users"
