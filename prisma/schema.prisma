@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  UPLOADED
+  QUEUED
+  ANALYZING
+  COMPLETED
+  FAILED
+  DELETING
+  DELETED
+}
+
+enum TaskStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum TaskType {
+  PROJECT_ANALYSIS
+  CODE_REVIEW
+  INTERVIEW_QUESTION_GENERATION
+  INTERVIEW_REPORT_GENERATION
+  PROJECT_CLEANUP
+}
+
+enum InterviewStatus {
+  GENERATING
+  READY
+  IN_PROGRESS
+  SUBMITTED
+  REPORT_GENERATING
+  COMPLETED
+  FAILED
+}
+
+enum InterviewDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model User {
+  id               String            @id @default(uuid()) @db.Uuid
+  email            String            @unique @db.VarChar(320)
+  passwordHash     String            @map("password_hash") @db.VarChar(255)
+  displayName      String?           @map("display_name") @db.VarChar(100)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  projects         Project[]
+  codeReviews      CodeReview[]
+  interviews       Interview[]
+  interviewAnswers InterviewAnswer[]
+  interviewReports InterviewReport[]
+  asyncTasks       AsyncTask[]
+  aiCallLogs       AiCallLog[]
+
+  @@map("users")
+}
+
+model Project {
+  id                 String           @id @default(uuid()) @db.Uuid
+  userId             String           @map("user_id") @db.Uuid
+  name               String           @db.VarChar(120)
+  description        String?          @db.Text
+  originalFileName   String           @map("original_file_name") @db.VarChar(255)
+  zipStoragePath     String?          @map("zip_storage_path")
+  extractStoragePath String?          @map("extract_storage_path")
+  fileSize           BigInt           @map("file_size")
+  fileHash           String           @map("file_hash") @db.VarChar(64)
+  status             ProjectStatus
+  failureCode        String?          @map("failure_code") @db.VarChar(100)
+  failureMessage     String?          @map("failure_message") @db.VarChar(500)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis           ProjectAnalysis?
+  codeReviews        CodeReview[]
+  interviews         Interview[]
+  asyncTasks         AsyncTask[]
+  aiCallLogs         AiCallLog[]
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@index([userId, fileHash])
+  @@map("projects")
+}
+
+model ProjectAnalysis {
+  id              String   @id @default(uuid()) @db.Uuid
+  projectId       String   @unique @map("project_id") @db.Uuid
+  summary         String   @db.Text
+  techStack       Json     @map("tech_stack") @db.JsonB
+  directoryTree   Json     @map("directory_tree") @db.JsonB
+  coreModules     Json     @map("core_modules") @db.JsonB
+  entryFiles      Json     @map("entry_files") @db.JsonB
+  statistics      Json     @db.JsonB
+  analyzerVersion String   @map("analyzer_version") @db.VarChar(50)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_analyses")
+}
+
+model CodeReview {
+  id             String      @id @default(uuid()) @db.Uuid
+  projectId      String      @map("project_id") @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  status         TaskStatus
+  summary        String?     @db.Text
+  score          Int?
+  result         Json?       @db.JsonB
+  model          String?     @db.VarChar(100)
+  failureCode    String?     @map("failure_code") @db.VarChar(100)
+  failureMessage String?     @map("failure_message") @db.VarChar(500)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt    DateTime?   @map("completed_at") @db.Timestamptz(6)
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asyncTasks     AsyncTask[]
+
+  @@index([userId, createdAt])
+  @@index([projectId, status])
+  @@map("code_reviews")
+}
+
+model Interview {
+  id             String              @id @default(uuid()) @db.Uuid
+  projectId      String              @map("project_id") @db.Uuid
+  userId         String              @map("user_id") @db.Uuid
+  title          String              @db.VarChar(150)
+  status         InterviewStatus
+  difficulty     InterviewDifficulty
+  questionCount  Int                 @map("question_count")
+  currentIndex   Int                 @default(0) @map("current_index")
+  failureCode    String?             @map("failure_code") @db.VarChar(100)
+  failureMessage String?             @map("failure_message") @db.VarChar(500)
+  startedAt      DateTime?           @map("started_at") @db.Timestamptz(6)
+  submittedAt    DateTime?           @map("submitted_at") @db.Timestamptz(6)
+  completedAt    DateTime?           @map("completed_at") @db.Timestamptz(6)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions      InterviewQuestion[]
+  answers        InterviewAnswer[]
+  report         InterviewReport?
+  asyncTasks     AsyncTask[]
+
+  @@index([userId, createdAt])
+  @@index([projectId, status])
+  @@map("interviews")
+}
+
+model InterviewQuestion {
+  id              String              @id @default(uuid()) @db.Uuid
+  interviewId     String              @map("interview_id") @db.Uuid
+  sequence        Int
+  category        String              @db.VarChar(100)
+  difficulty      InterviewDifficulty
+  question        String              @db.Text
+  referencePoints Json                @map("reference_points") @db.JsonB
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  interview       Interview           @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  answer          InterviewAnswer?
+
+  @@unique([interviewId, sequence])
+  @@map("interview_questions")
+}
+
+model InterviewAnswer {
+  id          String            @id @default(uuid()) @db.Uuid
+  questionId  String            @unique @map("question_id") @db.Uuid
+  interviewId String            @map("interview_id") @db.Uuid
+  userId      String            @map("user_id") @db.Uuid
+  content     String            @db.Text
+  answeredAt  DateTime          @default(now()) @map("answered_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  question    InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  interview   Interview         @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId])
+  @@index([userId, interviewId])
+  @@map("interview_answers")
+}
+
+model InterviewReport {
+  id              String    @id @default(uuid()) @db.Uuid
+  interviewId     String    @unique @map("interview_id") @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  overallScore    Int       @map("overall_score")
+  summary         String    @db.Text
+  dimensions      Json      @db.JsonB
+  questionReviews Json      @map("question_reviews") @db.JsonB
+  strengths       Json      @db.JsonB
+  improvements    Json      @db.JsonB
+  result          Json      @db.JsonB
+  model           String    @db.VarChar(100)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  interview       Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("interview_reports")
+}
+
+model AsyncTask {
+  id             String      @id @default(uuid()) @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  projectId      String?     @map("project_id") @db.Uuid
+  codeReviewId   String?     @map("code_review_id") @db.Uuid
+  interviewId    String?     @map("interview_id") @db.Uuid
+  type           TaskType
+  status         TaskStatus
+  bullJobId      String?     @unique @map("bull_job_id") @db.VarChar(100)
+  attempts       Int         @default(0)
+  progress       Int         @default(0)
+  failureCode    String?     @map("failure_code") @db.VarChar(100)
+  failureMessage String?     @map("failure_message") @db.VarChar(500)
+  startedAt      DateTime?   @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime?   @map("completed_at") @db.Timestamptz(6)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project        Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codeReview     CodeReview? @relation(fields: [codeReviewId], references: [id], onDelete: Cascade)
+  interview      Interview?  @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  aiCallLogs     AiCallLog[]
+
+  @@index([userId, status])
+  @@index([projectId, type])
+  @@index([type, status])
+  @@index([codeReviewId])
+  @@index([interviewId])
+  @@map("async_tasks")
+}
+
+model AiCallLog {
+  id               String     @id @default(uuid()) @db.Uuid
+  userId           String     @map("user_id") @db.Uuid
+  projectId        String?    @map("project_id") @db.Uuid
+  taskId           String?    @map("task_id") @db.Uuid
+  scene            String     @db.VarChar(100)
+  provider         String     @db.VarChar(50)
+  model            String     @db.VarChar(100)
+  promptVersion    String?    @map("prompt_version") @db.VarChar(50)
+  schemaVersion    String?    @map("schema_version") @db.VarChar(50)
+  retryCount       Int        @default(0) @map("retry_count")
+  status           String     @db.VarChar(30)
+  promptTokens     Int?       @map("prompt_tokens")
+  completionTokens Int?       @map("completion_tokens")
+  totalTokens      Int?       @map("total_tokens")
+  durationMs       Int?       @map("duration_ms")
+  errorCode        String?    @map("error_code") @db.VarChar(100)
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project          Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task             AsyncTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([taskId])
+  @@map("ai_call_logs")
+}

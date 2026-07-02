@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.pnpm-store/
+.worktrees/
+dist/
+build/
+.next/
+coverage/
+*.log
+storage/*
+!storage/.gitkeep
