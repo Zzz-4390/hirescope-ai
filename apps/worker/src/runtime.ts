@@ -9,8 +9,10 @@ import { TaskRecoveryService } from './recovery/task-recovery.service';
 import { StoragePathService } from './storage/storage-path.service';
 import { DeterministicCodeReviewService } from './code-review/deterministic-code-review.service';
 import { CodeReviewProcessor } from './processors/code-review.processor';
+import { DeterministicInterviewQuestionService } from './interview/deterministic-interview-question.service';
+import { InterviewQuestionProcessor } from './processors/interview-question.processor';
 
-export function createTaskHandler(prisma: PrismaClient, analysis: ProjectAnalysisProcessor, cleanup: ProjectCleanupProcessor, codeReview?: CodeReviewProcessor) {
+export function createTaskHandler(prisma: PrismaClient, analysis: ProjectAnalysisProcessor, cleanup: ProjectCleanupProcessor, codeReview?: CodeReviewProcessor, interviewQuestions?: InterviewQuestionProcessor) {
   return async (job: Job): Promise<void> => {
     const payload = TaskJobPayloadSchema.parse(job.data);
     let task = await prisma.asyncTask.findUnique({ where: { id: payload.taskId }, select: { type: true, status: true } });
@@ -22,6 +24,7 @@ export function createTaskHandler(prisma: PrismaClient, analysis: ProjectAnalysi
     if (task.type === TaskType.PROJECT_ANALYSIS) return analysis.process(payload.taskId);
     if (task.type === TaskType.PROJECT_CLEANUP) return cleanup.process(payload.taskId);
     if (task.type === TaskType.CODE_REVIEW && codeReview) return codeReview.process(payload.taskId);
+    if (task.type === TaskType.INTERVIEW_QUESTION_GENERATION && interviewQuestions) return interviewQuestions.process(payload.taskId);
     throw new Error('TASK_TYPE_UNSUPPORTED');
   };
 }
@@ -42,8 +45,9 @@ export async function startWorkerRuntime(options: RuntimeOptions) {
   const analysis = new ProjectAnalysisProcessor(prisma, paths, new ZipExtractorService(options.limits), new ProjectAnalyzerService(options.limits.maxTextReadBytes));
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
   const codeReview = new CodeReviewProcessor(prisma, new DeterministicCodeReviewService());
+  const interviewQuestions = new InterviewQuestionProcessor(prisma, new DeterministicInterviewQuestionService());
   const recovery = new TaskRecoveryService(prisma, queue, options.recoveryBatchSize);
-  const worker = new Worker(options.queueName ?? TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview), { connection, concurrency: 2 });
+  const worker = new Worker(options.queueName ?? TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions), { connection, concurrency: 2 });
   worker.on('failed', (job) => console.error(`Worker job failed: ${job?.id ?? 'unknown'}`));
   await recovery.recoverBatch();
   const timer = setInterval(() => { void recovery.recoverBatch().catch(() => console.error('Task recovery pass failed')); }, options.recoveryIntervalMs);

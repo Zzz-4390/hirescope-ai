@@ -40,4 +40,11 @@ describe('TaskRecoveryService', () => {
     await new TaskRecoveryService(prisma as never, { add: vi.fn().mockResolvedValue(undefined) } as never, 100).recoverBatch();
     expect(tx.codeReview.updateMany).toHaveBeenCalledWith({ where: { id: 'review-id', status: TaskStatus.PENDING }, data: { status: TaskStatus.QUEUED } });
   });
+
+  it('recovers interview question generation without changing interview status', async () => {
+    const row = { id: '8d73fbe6-0f0b-43fc-af01-81b0d7af76c4', type: TaskType.INTERVIEW_QUESTION_GENERATION, codeReviewId: null };
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([row]), asyncTask: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, codeReview: { updateMany: vi.fn() }, interview: { updateMany: vi.fn() } };
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)) }; await new TaskRecoveryService(prisma as never, { add: vi.fn().mockResolvedValue(undefined) } as never, 100).recoverBatch();
+    expect(tx.asyncTask.updateMany).toHaveBeenCalled(); expect(tx.interview.updateMany).not.toHaveBeenCalled();
+  });
 });

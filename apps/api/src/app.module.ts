@@ -10,6 +10,7 @@ import { RedisModule } from './redis/redis.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks.module';
 import { CodeReviewsModule } from './code-reviews/code-reviews.module';
+import { InterviewsModule } from './interviews/interviews.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CodeReviewsModule } from './code-reviews/code-reviews.module';
     TasksModule,
     ProjectsModule,
     CodeReviewsModule,
+    InterviewsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
