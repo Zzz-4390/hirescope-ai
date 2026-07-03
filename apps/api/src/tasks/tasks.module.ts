@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import { TASK_QUEUE_NAME } from '@hirescope/shared-types';
 import { TASK_QUEUE, TaskQueueService } from './task-queue.service';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
@@ -14,7 +15,7 @@ function connectionOptions() {
   controllers: [TasksController],
   providers: [
     TasksService,
-    { provide: TASK_QUEUE, useFactory: () => new Queue(process.env.TASK_QUEUE_NAME ?? 'hirescope-tasks', { connection: connectionOptions() }) },
+    { provide: TASK_QUEUE, useFactory: () => new Queue(process.env.TASK_QUEUE_NAME ?? TASK_QUEUE_NAME, { connection: connectionOptions() }) },
     TaskQueueService,
   ],
   exports: [TaskQueueService],

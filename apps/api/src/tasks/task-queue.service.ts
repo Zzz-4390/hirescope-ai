@@ -1,7 +1,8 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import type { TaskJobPayload } from '@hirescope/shared-types';
 
-export interface TaskQueue { add(name: string, data: { taskId: string }, options: { jobId: string }): Promise<unknown> }
+export interface TaskQueue { add(name: string, data: TaskJobPayload, options: { jobId: string }): Promise<unknown> }
 export const TASK_QUEUE = Symbol('TASK_QUEUE');
 
 @Injectable()

@@ -9,6 +9,7 @@
     "test:e2e": "tsx --env-file=../../.env test/run-e2e-tests.ts"
   },
   "dependencies": {
+    "@hirescope/shared-types": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
