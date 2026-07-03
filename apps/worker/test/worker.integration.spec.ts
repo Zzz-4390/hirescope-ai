@@ -1,5 +1,5 @@
 import { DEFAULT_EXTRACTION_LIMITS, TASK_QUEUE_NAME } from '@hirescope/shared-types';
-import { PrismaClient, ProjectStatus, TaskStatus, TaskType } from '@prisma/client';
+import { InterviewDifficulty, InterviewStatus, PrismaClient, ProjectStatus, TaskStatus, TaskType } from '@prisma/client';
 import { Queue, QueueEvents, Worker } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -17,6 +17,8 @@ import { DeterministicCodeReviewService } from '../src/code-review/deterministic
 import { CodeReviewProcessor } from '../src/processors/code-review.processor';
 import { DeterministicInterviewQuestionService } from '../src/interview/deterministic-interview-question.service';
 import { InterviewQuestionProcessor } from '../src/processors/interview-question.processor';
+import { DeterministicInterviewReportService } from '../src/interview/deterministic-interview-report.service';
+import { InterviewReportProcessor } from '../src/processors/interview-report.processor';
 
 async function createZip(path: string, entries: Record<string, string>) {
   const zip = new ZipFile();
@@ -34,6 +36,7 @@ describe('Project Analysis Worker integration', () => {
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
   const codeReview = new CodeReviewProcessor(prisma, new DeterministicCodeReviewService());
   const interviewQuestions = new InterviewQuestionProcessor(prisma, new DeterministicInterviewQuestionService());
+  const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
   const queue = new Queue(TASK_QUEUE_NAME, { connection: redisConnection(process.env.REDIS_URL!) });
   let userId: string;
 
@@ -143,5 +146,26 @@ describe('Project Analysis Worker integration', () => {
     const connection = redisConnection(process.env.REDIS_URL!); const events = new QueueEvents(TASK_QUEUE_NAME, { connection }); await events.waitUntilReady(); const worker = new Worker(TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions), { connection }); await worker.waitUntilReady();
     try { const job = await queue.add(TaskType.INTERVIEW_QUESTION_GENERATION, { taskId: task.id }, { jobId: task.id }); await job.waitUntilFinished(events, 15_000); await interviewQuestions.process(task.id); expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: 'READY' }); expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 }); const questions = await prisma.interviewQuestion.findMany({ where: { interviewId: interview.id }, orderBy: { sequence: 'asc' } }); expect(questions).toHaveLength(8); expect(questions.map((value) => value.sequence)).toEqual([1,2,3,4,5,6,7,8]); }
     finally { await worker.close(); await events.close(); }
+  });
+
+  it('generates one deterministic interview report and remains idempotent', async () => {
+    const project = await prisma.project.create({ data: { userId, name: 'Report Worker E2E', originalFileName: 'source.zip', fileSize: 4n, fileHash: '4'.repeat(64), status: ProjectStatus.COMPLETED } });
+    const interview = await prisma.interview.create({ data: { userId, projectId: project.id, title: 'Report', status: InterviewStatus.REPORT_GENERATING, difficulty: InterviewDifficulty.MEDIUM, questionCount: 5, submittedAt: new Date(), questions: { create: Array.from({ length: 5 }, (_, index) => ({ sequence: index + 1, category: index % 2 ? 'database' : 'architecture', difficulty: InterviewDifficulty.MEDIUM, question: `How is design ${index + 1} implemented?`, referencePoints: [index % 2 ? 'transaction' : 'JWT'] })) } }, include: { questions: { orderBy: { sequence: 'asc' } } } });
+    await prisma.interviewAnswer.createMany({ data: interview.questions.map((question, index) => ({ userId, interviewId: interview.id, questionId: question.id, content: index % 2 ? 'A transaction guarantees consistency' : 'JWT authentication with safe errors' })) });
+    const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.QUEUED } });
+    await interviewReports.process(task.id); await interviewReports.process(task.id);
+    expect(await prisma.interviewReport.count({ where: { interviewId: interview.id } })).toBe(1);
+    expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: InterviewStatus.COMPLETED, completedAt: expect.any(Date) });
+    expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 });
+    expect(await prisma.interviewReport.findUnique({ where: { interviewId: interview.id } })).toMatchObject({ model: 'deterministic-interview-report-v1', overallScore: expect.any(Number) });
+  });
+
+  it('recovers a pending interview report task with taskId-only payload', async () => {
+    const project = await prisma.project.create({ data: { userId, name: 'Report Recovery', originalFileName: 'source.zip', fileSize: 4n, fileHash: '5'.repeat(64), status: ProjectStatus.COMPLETED } });
+    const interview = await prisma.interview.create({ data: { userId, projectId: project.id, title: 'Recover report', status: InterviewStatus.REPORT_GENERATING, difficulty: InterviewDifficulty.EASY, questionCount: 5 } });
+    const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.PENDING } });
+    expect(await new TaskRecoveryService(prisma, queue, 100).recoverBatch()).toBe(1);
+    expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.QUEUED, bullJobId: task.id });
+    expect((await queue.getJob(task.id))?.data).toEqual({ taskId: task.id });
   });
 });

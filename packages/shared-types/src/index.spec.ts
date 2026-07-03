@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CodeReviewResultSchema, InterviewQuestionsResultSchema, ProjectAnalysisResultSchema, TaskJobPayloadSchema, extractionLimitsFromEnv } from './index';
+import { CodeReviewResultSchema, InterviewQuestionsResultSchema, InterviewReportResultSchema, ProjectAnalysisResultSchema, TaskJobPayloadSchema, extractionLimitsFromEnv } from './index';
 
 describe('shared worker contracts', () => {
   it('accepts only taskId in a queue payload', () => {
@@ -31,5 +31,28 @@ describe('InterviewQuestionsResultSchema', () => {
     const result = { questions: [{ sequence: 1, category: 'architecture', difficulty: 'MEDIUM', question: 'How is the API structured?', referencePoints: ['module boundaries'] }] };
     expect(InterviewQuestionsResultSchema.safeParse(result).success).toBe(true);
     expect(InterviewQuestionsResultSchema.safeParse({ questions: [{ ...result.questions[0], internal: true }] }).success).toBe(false);
+  });
+});
+
+describe('InterviewReportResultSchema', () => {
+  const report = {
+    overallScore: 82,
+    summary: '候选人能够清晰说明项目实现。',
+    dimensions: { projectUnderstanding: 84, technicalAccuracy: 82, communication: 80, problemSolving: 81 },
+    questionReviews: [{ questionId: 'question-1', sequence: 1, score: 82, comment: '回答覆盖主要要点。', matchedReferencePoints: 1, totalReferencePoints: 2 }],
+    strengths: ['能够结合项目说明关键设计。'],
+    improvements: ['可以补充异常处理细节。'],
+    model: 'deterministic-interview-report-v1',
+  };
+
+  it('accepts the strict deterministic report contract', () => {
+    expect(InterviewReportResultSchema.parse(report)).toEqual(report);
+  });
+
+  it('rejects invalid scores, empty lists, wrong models, and extra fields', () => {
+    expect(InterviewReportResultSchema.safeParse({ ...report, overallScore: 101 }).success).toBe(false);
+    expect(InterviewReportResultSchema.safeParse({ ...report, strengths: [] }).success).toBe(false);
+    expect(InterviewReportResultSchema.safeParse({ ...report, model: 'other' }).success).toBe(false);
+    expect(InterviewReportResultSchema.safeParse({ ...report, referencePoints: ['private'] }).success).toBe(false);
   });
 });

@@ -47,4 +47,14 @@ describe('TaskRecoveryService', () => {
     const prisma = { $transaction: vi.fn((callback) => callback(tx)) }; await new TaskRecoveryService(prisma as never, { add: vi.fn().mockResolvedValue(undefined) } as never, 100).recoverBatch();
     expect(tx.asyncTask.updateMany).toHaveBeenCalled(); expect(tx.interview.updateMany).not.toHaveBeenCalled();
   });
+
+  it('selects and republishes pending interview report tasks with taskId only', async () => {
+    const row = { id: '8d73fbe6-0f0b-43fc-af01-81b0d7af76c4', type: TaskType.INTERVIEW_REPORT_GENERATION, codeReviewId: null };
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([row]), asyncTask: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } };
+    const queue = { add: vi.fn().mockResolvedValue(undefined) };
+    await new TaskRecoveryService({ $transaction: (callback: any) => callback(tx) } as never, queue as never, 100).recoverBatch();
+    const query = tx.$queryRaw.mock.calls[0]![0] as { strings: string[] };
+    expect(query.strings.join('')).toContain('INTERVIEW_REPORT_GENERATION');
+    expect(queue.add).toHaveBeenCalledWith(TaskType.INTERVIEW_REPORT_GENERATION, { taskId: row.id }, { jobId: row.id });
+  });
 });

@@ -42,6 +42,32 @@ export const InterviewQuestionSchema = z.object({
 export const InterviewQuestionsResultSchema = z.object({ questions: z.array(InterviewQuestionSchema).min(1) }).strict();
 export type InterviewQuestionsResult = z.infer<typeof InterviewQuestionsResultSchema>;
 
+const InterviewReportScoreSchema = z.number().int().min(0).max(100);
+export const InterviewReportDimensionsSchema = z.object({
+  projectUnderstanding: InterviewReportScoreSchema,
+  technicalAccuracy: InterviewReportScoreSchema,
+  communication: InterviewReportScoreSchema,
+  problemSolving: InterviewReportScoreSchema,
+}).strict();
+export const InterviewQuestionReviewSchema = z.object({
+  questionId: z.string().min(1),
+  sequence: z.number().int().positive(),
+  score: InterviewReportScoreSchema,
+  comment: z.string().min(1),
+  matchedReferencePoints: z.number().int().nonnegative(),
+  totalReferencePoints: z.number().int().nonnegative(),
+}).strict().refine((review) => review.matchedReferencePoints <= review.totalReferencePoints, { message: 'matchedReferencePoints cannot exceed totalReferencePoints' });
+export const InterviewReportResultSchema = z.object({
+  overallScore: InterviewReportScoreSchema,
+  summary: z.string().min(1),
+  dimensions: InterviewReportDimensionsSchema,
+  questionReviews: z.array(InterviewQuestionReviewSchema).min(1),
+  strengths: z.array(z.string().min(1)).min(1),
+  improvements: z.array(z.string().min(1)).min(1),
+  model: z.literal('deterministic-interview-report-v1'),
+}).strict();
+export type InterviewReportResult = z.infer<typeof InterviewReportResultSchema>;
+
 export interface ExtractionLimits {
   zipMaxBytes: number;
   maxFiles: number;

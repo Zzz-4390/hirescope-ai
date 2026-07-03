@@ -13,7 +13,7 @@ export class TaskRecoveryService {
         FROM async_tasks
         WHERE status = 'PENDING'::"TaskStatus"
           AND bull_job_id IS NULL
-          AND type IN ('PROJECT_ANALYSIS'::"TaskType", 'CODE_REVIEW'::"TaskType", 'INTERVIEW_QUESTION_GENERATION'::"TaskType", 'PROJECT_CLEANUP'::"TaskType")
+          AND type IN ('PROJECT_ANALYSIS'::"TaskType", 'CODE_REVIEW'::"TaskType", 'INTERVIEW_QUESTION_GENERATION'::"TaskType", 'INTERVIEW_REPORT_GENERATION'::"TaskType", 'PROJECT_CLEANUP'::"TaskType")
         ORDER BY created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT ${this.batchSize}

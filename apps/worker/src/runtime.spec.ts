@@ -12,4 +12,13 @@ describe('worker runtime routing', () => {
     expect(cleanup.process).toHaveBeenCalledWith('8d73fbe6-0f0b-43fc-af01-81b0d7af76c4');
     expect(analysis.process).not.toHaveBeenCalled();
   });
+
+  it('routes INTERVIEW_REPORT_GENERATION using only the validated taskId', async () => {
+    const reports = { process: vi.fn() };
+    const prisma = { asyncTask: { findUnique: vi.fn().mockResolvedValue({ type: TaskType.INTERVIEW_REPORT_GENERATION, status: 'QUEUED' }) } };
+    const handler = createTaskHandler(prisma as never, { process: vi.fn() } as never, { process: vi.fn() } as never, undefined, undefined, reports as never);
+    const taskId = '8d73fbe6-0f0b-43fc-af01-81b0d7af76c4';
+    await handler({ name: 'untrusted-name', data: { taskId } } as never);
+    expect(reports.process).toHaveBeenCalledWith(taskId);
+  });
 });
