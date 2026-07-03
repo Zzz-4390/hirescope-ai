@@ -1,2 +1,2 @@
-import { Module } from '@nestjs/common'; import { TasksModule } from '../tasks/tasks.module'; import { InterviewsController } from './interviews.controller'; import { InterviewsService } from './interviews.service';
-@Module({ imports: [TasksModule], controllers: [InterviewsController], providers: [InterviewsService] }) export class InterviewsModule {}
+import { Module } from '@nestjs/common'; import { TasksModule } from '../tasks/tasks.module'; import { InterviewReportsService } from './interview-reports.service'; import { InterviewsController } from './interviews.controller'; import { InterviewsService } from './interviews.service';
+@Module({ imports: [TasksModule], controllers: [InterviewsController], providers: [InterviewsService, InterviewReportsService] }) export class InterviewsModule {}
