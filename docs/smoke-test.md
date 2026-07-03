@@ -146,7 +146,34 @@ curl.exe -i -H "Authorization: Bearer $token" `
 
 使用另一个用户的 Token 查询 `$projectId` 应返回 HTTP `404`，避免泄露资源是否存在。
 
-## 8. 常见问题排查
+## 8. 创建并查询确定性代码审查
+
+重新执行第 4、5 节创建一个尚未删除的项目，并在项目分析任务成功后执行：
+
+```powershell
+$review = Invoke-RestMethod -Method Post `
+  -Uri "$baseUrl/projects/$projectId/code-reviews" -Headers $authorization
+$codeReviewId = $review.id
+
+do {
+  Start-Sleep -Milliseconds 500
+  $reviewDetail = Invoke-RestMethod -Method Get `
+    -Uri "$baseUrl/code-reviews/$codeReviewId" -Headers $authorization
+} until ($reviewDetail.status -in @('SUCCEEDED', 'FAILED', 'CANCELLED'))
+
+$history = Invoke-RestMethod -Method Get `
+  -Uri "$baseUrl/projects/$projectId/code-reviews?page=1&pageSize=20" `
+  -Headers $authorization
+
+$reviewDetail
+$history
+```
+
+预期审查状态和关联任务均为 `SUCCEEDED`，`model` 为
+`deterministic-code-review-v1`，`result` 包含 `overview`、`strengths`、`risks`、
+`suggestions`、`maintainability`、`security` 和 `performance`。本流程不调用 AI。
+
+## 9. 常见问题排查
 
 - `docker compose ps` 不是 `healthy`：确认 Docker Desktop 已启动，且本机 `5432`、`6379`
   端口未被占用。

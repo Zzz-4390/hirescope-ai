@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ProjectAnalysisResultSchema, TaskJobPayloadSchema, extractionLimitsFromEnv } from './index';
+import { CodeReviewResultSchema, ProjectAnalysisResultSchema, TaskJobPayloadSchema, extractionLimitsFromEnv } from './index';
 
 describe('shared worker contracts', () => {
   it('accepts only taskId in a queue payload', () => {
@@ -15,5 +15,13 @@ describe('shared worker contracts', () => {
 
   it('rejects incomplete deterministic analysis results', () => {
     expect(ProjectAnalysisResultSchema.safeParse({ summary: 'x' }).success).toBe(false);
+  });
+});
+
+describe('CodeReviewResultSchema', () => {
+  it('accepts the complete strict deterministic review structure', () => {
+    const result = { overview: 'Overview', strengths: ['Typed'], risks: ['Coverage'], suggestions: ['Add tests'], maintainability: { score: 80, summary: 'Clear' }, security: { score: 75, summary: 'Review inputs' }, performance: { score: 85, summary: 'Small project' } };
+    expect(CodeReviewResultSchema.safeParse(result).success).toBe(true);
+    expect(CodeReviewResultSchema.safeParse({ ...result, internalPrompt: 'secret' }).success).toBe(false);
   });
 });

@@ -32,4 +32,12 @@ describe('TaskRecoveryService', () => {
     expect(queue.add).toHaveBeenNthCalledWith(1, row.type, { taskId: row.id }, { jobId: row.id });
     expect(queue.add).toHaveBeenNthCalledWith(2, row.type, { taskId: row.id }, { jobId: row.id });
   });
+
+  it('queues the related review when recovering a CODE_REVIEW task', async () => {
+    const row = { id: '8d73fbe6-0f0b-43fc-af01-81b0d7af76c4', type: TaskType.CODE_REVIEW, codeReviewId: 'review-id' };
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([row]), asyncTask: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, codeReview: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } };
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)) };
+    await new TaskRecoveryService(prisma as never, { add: vi.fn().mockResolvedValue(undefined) } as never, 100).recoverBatch();
+    expect(tx.codeReview.updateMany).toHaveBeenCalledWith({ where: { id: 'review-id', status: TaskStatus.PENDING }, data: { status: TaskStatus.QUEUED } });
+  });
 });

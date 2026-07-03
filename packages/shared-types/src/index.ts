@@ -20,6 +20,18 @@ export const ProjectAnalysisResultSchema = z.object({
 }).strict();
 export type ProjectAnalysisResult = z.infer<typeof ProjectAnalysisResultSchema>;
 
+const ReviewDimensionSchema = z.object({ score: z.number().int().min(0).max(100), summary: z.string().min(1) }).strict();
+export const CodeReviewResultSchema = z.object({
+  overview: z.string().min(1),
+  strengths: z.array(z.string().min(1)),
+  risks: z.array(z.string().min(1)),
+  suggestions: z.array(z.string().min(1)),
+  maintainability: ReviewDimensionSchema,
+  security: ReviewDimensionSchema,
+  performance: ReviewDimensionSchema,
+}).strict();
+export type CodeReviewResult = z.infer<typeof CodeReviewResultSchema>;
+
 export interface ExtractionLimits {
   zipMaxBytes: number;
   maxFiles: number;

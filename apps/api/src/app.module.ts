@@ -9,6 +9,7 @@ import { PrismaModule } from './database/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks.module';
+import { CodeReviewsModule } from './code-reviews/code-reviews.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { TasksModule } from './tasks/tasks.module';
     AuthModule,
     TasksModule,
     ProjectsModule,
+    CodeReviewsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
