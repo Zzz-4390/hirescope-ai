@@ -7,7 +7,8 @@ import type { ListInterviewsDto } from './dto/list-interviews.dto';
 import { mapInterview, mapInterviewDetail } from './interview.mapper';
 
 const ACTIVE = [TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.PROCESSING];
-const interviewSelect = { id: true, title: true, status: true, difficulty: true, questionCount: true, currentIndex: true, failureCode: true, failureMessage: true, createdAt: true, updatedAt: true } as const;
+const interviewSelect = { id: true, title: true, status: true, difficulty: true, questionCount: true, currentIndex: true, failureCode: true, failureMessage: true, startedAt: true, submittedAt: true, completedAt: true, createdAt: true, updatedAt: true } as const;
+type LockedInterview = { status: InterviewStatus; questionCount: number; currentIndex: number };
 
 @Injectable()
 export class InterviewsService {
@@ -41,11 +42,22 @@ export class InterviewsService {
     return { items: items.map(mapInterview), pagination: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.ceil(total / query.pageSize) } };
   }
   async get(userId: string, interviewId: string) {
-    const interview = await this.prisma.interview.findFirst({ where: { id: interviewId, userId }, select: { ...interviewSelect, questions: { orderBy: { sequence: 'asc' }, select: { id: true, sequence: true, category: true, difficulty: true, question: true } }, asyncTasks: { where: { type: TaskType.INTERVIEW_QUESTION_GENERATION }, orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, status: true, progress: true, failureCode: true, failureMessage: true, createdAt: true, completedAt: true } } } });
+    const interview = await this.prisma.interview.findFirst({ where: { id: interviewId, userId }, select: { ...interviewSelect, questions: { orderBy: { sequence: 'asc' }, select: { id: true, sequence: true, category: true, difficulty: true, question: true, answer: { select: { content: true, answeredAt: true, updatedAt: true } } } }, _count: { select: { answers: true } }, asyncTasks: { where: { type: TaskType.INTERVIEW_QUESTION_GENERATION }, orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, status: true, progress: true, failureCode: true, failureMessage: true, createdAt: true, completedAt: true } } } });
     if (!interview) throw new NotFoundException({ code: 'INTERVIEW_NOT_FOUND', message: '面试不存在' }); const { asyncTasks, ...fields } = interview; const task = asyncTasks[0];
     return { ...mapInterviewDetail(fields), task: task ? { id: task.id, status: task.status, progress: task.progress, createdAt: task.createdAt, completedAt: task.completedAt, failure: task.failureCode ? { code: task.failureCode, message: task.failureMessage } : null } : null };
+  }
+  async start(userId: string, interviewId: string) {
+    await this.prisma.$transaction(async (tx) => { const interview = await lockInterview(tx, userId, interviewId); if (!interview) throw this.interviewNotFound(); if (interview.status === InterviewStatus.IN_PROGRESS) return; if (interview.status !== InterviewStatus.READY) throw new ConflictException({ code: 'INTERVIEW_NOT_READY', message: '当前面试状态不能开始' }); const count = await tx.interviewQuestion.count({ where: { interviewId } }); if (count !== interview.questionCount) throw new ConflictException({ code: 'INTERVIEW_QUESTIONS_NOT_READY', message: '面试题尚未准备完成' }); await tx.interview.update({ where: { id: interviewId }, data: { status: InterviewStatus.IN_PROGRESS, startedAt: new Date() } }); }); return this.get(userId, interviewId);
+  }
+  async saveAnswer(userId: string, interviewId: string, questionId: string, content: string) {
+    return this.prisma.$transaction(async (tx) => { const interview = await lockInterview(tx, userId, interviewId); if (!interview) throw this.interviewNotFound(); if (interview.status !== InterviewStatus.IN_PROGRESS) throw new ConflictException({ code: 'INTERVIEW_NOT_IN_PROGRESS', message: '当前面试状态不能保存答案' }); const question = await tx.interviewQuestion.findFirst({ where: { id: questionId, interviewId }, select: { sequence: true } }); if (!question) throw new NotFoundException({ code: 'QUESTION_NOT_FOUND', message: '面试题不存在' }); const answer = await tx.interviewAnswer.upsert({ where: { questionId }, create: { questionId, interviewId, userId, content }, update: { content, answeredAt: new Date() }, select: { id: true, questionId: true, content: true, answeredAt: true, updatedAt: true } }); const currentIndex = Math.max(interview.currentIndex, question.sequence); if (currentIndex !== interview.currentIndex) await tx.interview.update({ where: { id: interviewId }, data: { currentIndex } }); return { ...answer, currentIndex }; });
+  }
+  async submit(userId: string, interviewId: string) {
+    await this.prisma.$transaction(async (tx) => { const interview = await lockInterview(tx, userId, interviewId); if (!interview) throw this.interviewNotFound(); if (interview.status === InterviewStatus.SUBMITTED) return; if (interview.status !== InterviewStatus.IN_PROGRESS) throw new ConflictException({ code: 'INTERVIEW_NOT_IN_PROGRESS', message: '当前面试状态不能提交' }); const answeredCount = await tx.interviewAnswer.count({ where: { interviewId, userId } }); if (answeredCount !== interview.questionCount) throw new ConflictException({ code: 'INTERVIEW_NOT_COMPLETE', message: '请完成全部题目后再提交' }); await tx.interview.update({ where: { id: interviewId }, data: { status: InterviewStatus.SUBMITTED, submittedAt: new Date(), currentIndex: interview.questionCount } }); }); return this.get(userId, interviewId);
   }
   private async assertProject(userId: string, projectId: string) { if (!await this.prisma.project.findFirst({ where: { id: projectId, userId, status: { notIn: [ProjectStatus.DELETING, ProjectStatus.DELETED] } }, select: { id: true } })) throw this.projectNotFound(); }
   private projectNotFound() { return new NotFoundException({ code: 'PROJECT_NOT_FOUND', message: '项目不存在' }); }
   private activeTask() { return new ConflictException({ code: 'TASK_ALREADY_ACTIVE', message: '面试题生成任务已存在' }); }
+  private interviewNotFound() { return new NotFoundException({ code: 'INTERVIEW_NOT_FOUND', message: '面试不存在' }); }
 }
+async function lockInterview(tx: Prisma.TransactionClient, userId: string, interviewId: string): Promise<LockedInterview | null> { const rows = await tx.$queryRaw<LockedInterview[]>(Prisma.sql`SELECT status, question_count AS "questionCount", current_index AS "currentIndex" FROM interviews WHERE id = ${interviewId}::uuid AND user_id = ${userId}::uuid FOR UPDATE`); return rows[0] ?? null; }
