@@ -32,6 +32,16 @@ export const CodeReviewResultSchema = z.object({
 }).strict();
 export type CodeReviewResult = z.infer<typeof CodeReviewResultSchema>;
 
+export const InterviewQuestionSchema = z.object({
+  sequence: z.number().int().positive(),
+  category: z.string().min(1).max(100),
+  difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
+  question: z.string().min(1),
+  referencePoints: z.array(z.string().min(1)),
+}).strict();
+export const InterviewQuestionsResultSchema = z.object({ questions: z.array(InterviewQuestionSchema).min(1) }).strict();
+export type InterviewQuestionsResult = z.infer<typeof InterviewQuestionsResultSchema>;
+
 export interface ExtractionLimits {
   zipMaxBytes: number;
   maxFiles: number;

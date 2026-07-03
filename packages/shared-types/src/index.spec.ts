@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CodeReviewResultSchema, ProjectAnalysisResultSchema, TaskJobPayloadSchema, extractionLimitsFromEnv } from './index';
+import { CodeReviewResultSchema, InterviewQuestionsResultSchema, ProjectAnalysisResultSchema, TaskJobPayloadSchema, extractionLimitsFromEnv } from './index';
 
 describe('shared worker contracts', () => {
   it('accepts only taskId in a queue payload', () => {
@@ -23,5 +23,13 @@ describe('CodeReviewResultSchema', () => {
     const result = { overview: 'Overview', strengths: ['Typed'], risks: ['Coverage'], suggestions: ['Add tests'], maintainability: { score: 80, summary: 'Clear' }, security: { score: 75, summary: 'Review inputs' }, performance: { score: 85, summary: 'Small project' } };
     expect(CodeReviewResultSchema.safeParse(result).success).toBe(true);
     expect(CodeReviewResultSchema.safeParse({ ...result, internalPrompt: 'secret' }).success).toBe(false);
+  });
+});
+
+describe('InterviewQuestionsResultSchema', () => {
+  it('accepts strict sequential interview questions', () => {
+    const result = { questions: [{ sequence: 1, category: 'architecture', difficulty: 'MEDIUM', question: 'How is the API structured?', referencePoints: ['module boundaries'] }] };
+    expect(InterviewQuestionsResultSchema.safeParse(result).success).toBe(true);
+    expect(InterviewQuestionsResultSchema.safeParse({ questions: [{ ...result.questions[0], internal: true }] }).success).toBe(false);
   });
 });

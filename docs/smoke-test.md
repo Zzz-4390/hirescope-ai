@@ -173,7 +173,34 @@ $history
 `deterministic-code-review-v1`，`result` 包含 `overview`、`strengths`、`risks`、
 `suggestions`、`maintainability`、`security` 和 `performance`。本流程不调用 AI。
 
-## 9. 常见问题排查
+## 9. 创建并查询确定性模拟面试题
+
+准备一个状态为 `COMPLETED` 的 `$projectId` 后执行：
+
+```powershell
+$interview = Invoke-RestMethod -Method Post `
+  -Uri "$baseUrl/projects/$projectId/interviews" `
+  -Headers $authorization -ContentType 'application/json' `
+  -Body (@{ questionCount = 8; difficulty = 'MEDIUM' } | ConvertTo-Json)
+
+do {
+  Start-Sleep -Milliseconds 500
+  $interviewDetail = Invoke-RestMethod -Method Get `
+    -Uri "$baseUrl/interviews/$($interview.id)" -Headers $authorization
+} until ($interviewDetail.status -in @('READY', 'FAILED'))
+
+$interviews = Invoke-RestMethod -Method Get `
+  -Uri "$baseUrl/projects/$projectId/interviews?page=1&pageSize=20" `
+  -Headers $authorization
+
+$interviewDetail
+$interviews
+```
+
+预期状态为 `READY`，题目数量为 `8`，`sequence` 从 `1` 连续递增。接口不会返回
+内部使用的 `referencePoints`。本流程只使用确定性生成器，不调用 AI。
+
+## 10. 常见问题排查
 
 - `docker compose ps` 不是 `healthy`：确认 Docker Desktop 已启动，且本机 `5432`、`6379`
   端口未被占用。
