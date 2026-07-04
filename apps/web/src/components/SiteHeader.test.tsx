@@ -19,6 +19,17 @@ describe("SiteHeader", () => {
     );
   });
 
+  it("links product capabilities to its page and marks it active", () => {
+    render(<SiteHeader current="capabilities" />);
+
+    expect(screen.getByRole("link", { name: "产品能力" })).toHaveAttribute(
+      "href",
+      "/capabilities",
+    );
+    expect(screen.getByRole("link", { name: "产品能力" })).toHaveClass("active");
+    expect(screen.getByRole("link", { name: "首页" })).not.toHaveClass("active");
+  });
+
   it("shows logged-in state when an access token exists", () => {
     localStorage.setItem("hirescope.accessToken", "token-123");
 

@@ -6,10 +6,17 @@ import { useEffect, useState } from "react";
 import { getAccessToken } from "../lib/auth";
 import { Logo } from "./Logo";
 
-const navItems = ["首页", "产品能力", "使用流程", "报告示例", "角色入口", "帮助中心"];
+const navItems = [
+  { label: "首页", href: "/", key: "home" },
+  { label: "产品能力", href: "/capabilities", key: "capabilities" },
+  { label: "使用流程" },
+  { label: "报告示例" },
+  { label: "角色入口" },
+  { label: "帮助中心" },
+] as const;
 
 interface SiteHeaderProps {
-  current?: "home" | "login";
+  current?: "home" | "capabilities" | "login";
 }
 
 export function SiteHeader({ current = "home" }: SiteHeaderProps) {
@@ -33,14 +40,14 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
           <Logo />
         </Link>
         <nav className="desktop-nav" aria-label="主导航">
-          {navItems.map((item, index) =>
-            index === 0 ? (
-              <Link key={item} className={current === "home" ? "active" : ""} href="/">
-                {item}
+          {navItems.map((item) =>
+            "href" in item ? (
+              <Link key={item.label} className={current === item.key ? "active" : ""} href={item.href}>
+                {item.label}
               </Link>
             ) : (
-              <button key={item} type="button" aria-disabled="true" title="该页面暂未开放">
-                {item}
+              <button key={item.label} type="button" aria-disabled="true" title="该页面暂未开放">
+                {item.label}
               </button>
             ),
           )}
