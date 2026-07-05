@@ -24,4 +24,15 @@ describe("Product capabilities page", () => {
 
     requiredCopy.forEach((copy) => expect(source).toContain(copy));
   });
+
+  it("includes the page-scoped reveal, protected title phrase, avatar and dashboard chart details", () => {
+    const source = readFileSync(pagePath, "utf8");
+
+    expect(source).toContain("CapabilitiesRevealManager");
+    expect(source).toContain("cap-reveal-section");
+    expect(source).toContain("cap-title-nowrap");
+    expect(source).toContain("candidate-avatar");
+    expect(source).toContain("chart-grid");
+    expect(source).toContain("完整评估闭环");
+  });
 });

@@ -6,6 +6,7 @@ import {
 import Link from "next/link";
 
 import { Reveal } from "../components/Reveal";
+import { HomeRevealManager } from "../components/HomeRevealManager";
 import { SiteHeader } from "../components/SiteHeader";
 
 const capabilities = [
@@ -56,7 +57,8 @@ function ScorePanel() {
 
 export default function HomePage() {
   return (
-    <><SiteHeader /><main className="home-scroll home-page">
+    <><SiteHeader /><main className="home-page">
+      <HomeRevealManager />
       <section className="hero-section snap-section"><Reveal><div className="hero-grid"><div className="hero-copy"><h1>让项目能力被看见</h1><p>码途 AI（HireScope AI）通过 AI 项目审查、模拟面试与能力报告，帮助求职者更好展示自己，帮助面试官更科学评估候选人。</p><div className="hero-buttons"><Link className="primary-button" href="/login">立即体验 <ArrowRight /></Link><button className="secondary-button" type="button" aria-disabled="true">查看报告示例 <ArrowRight /></button></div></div><ProductPreview /></div></Reveal><div className="capability-strip">{capabilities.map(({icon:Icon,title,text}) => <div key={title}><Icon/><span><strong>{title}</strong><small>{text}</small></span></div>)}</div></section>
 
       <section className="roles-section snap-section"><div className="screen-content"><Reveal><div className="center-heading"><h2>面向不同角色，按需体验</h2><p>覆盖求职展示、专业评审与平台管理，让每一种评估更清晰、更高效。</p></div><div className="role-grid">{roles.map(({icon:Icon,title,subtitle,items}) => <article className="role-card" key={title}><div className="role-title"><i><Icon/></i><span><h3>{title}</h3><p>{subtitle}</p></span></div><ul>{items.map(item=><li key={item}><Check/>{item}</li>)}</ul></article>)}</div></Reveal><Reveal><div className="flow-block"><div className="center-heading"><h2>核心流程，简单六步完成评估</h2><p>从项目提交到报告生成，六个步骤完成专业评估。</p></div><div className="flow-grid">{flow.map(({icon:Icon,title,text},index)=><div className="flow-item" key={title}><span className="step">{index+1}</span><Icon/><h3>{title}</h3><p>{text}</p>{index<flow.length-1?<ArrowRight className="flow-arrow"/>:null}</div>)}</div></div></Reveal></div></section>

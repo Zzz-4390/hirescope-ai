@@ -31,8 +31,8 @@ import {
 import Link from "next/link";
 import type { ComponentType, SVGProps } from "react";
 
+import { CapabilitiesRevealManager } from "../../components/CapabilitiesRevealManager";
 import { Logo } from "../../components/Logo";
-import { Reveal } from "../../components/Reveal";
 import { SiteHeader } from "../../components/SiteHeader";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -80,7 +80,7 @@ const sections = {
 
 function FeatureList({ items }: { items: [Icon, string, string][] }) {
   return (
-    <div className="cap-feature-list">
+    <div className="cap-feature-list" data-cap-reveal-item data-cap-reveal-delay="2">
       {items.map(([IconComponent, title, text]) => (
         <div className="cap-feature" key={title}>
           <i><IconComponent /></i>
@@ -96,9 +96,9 @@ function SectionCopy({ number, label, title, description, features }: {
 }) {
   return (
     <div className="cap-section-copy">
-      <span className="cap-section-number">{number} {label}</span>
-      <h2>{title}</h2>
-      <p>{description}</p>
+      <span className="cap-section-number" data-cap-reveal-item>{number} {label}</span>
+      <h2 data-cap-reveal-item data-cap-reveal-delay="1">{title}</h2>
+      <p data-cap-reveal-item data-cap-reveal-delay="2">{description}</p>
       <FeatureList items={features} />
     </div>
   );
@@ -182,7 +182,7 @@ function SharePanel() {
 function CandidatePanel() {
   return (
     <article className="mini-product-card candidate-card">
-      <header><span className="avatar">张</span><div><strong>张伟</strong><small>高级后端工程师<br/>某科技有限公司</small></div></header>
+      <header><span className="candidate-avatar" role="img" aria-label="候选人张伟头像"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="avatar-bg" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#dceeff"/><stop offset="1" stopColor="#9fc5ec"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#avatar-bg)"/><circle cx="32" cy="24" r="11" fill="#f3c9ad"/><path d="M20 24c1-10 5-15 13-15 8 0 13 6 12 16-4-2-7-6-8-10-4 5-9 7-17 9Z" fill="#23364a"/><path d="M13 64c1-16 8-24 19-24s19 8 20 24" fill="#263e58"/><path d="M26 39c1 5 11 5 12 0l4 3c-2 8-17 8-20 0Z" fill="#fff" opacity=".88"/></svg></span><div><strong>张伟</strong><small>高级后端工程师<br/>某科技有限公司</small></div></header>
       <div className="candidate-grid"><div><small>综合评分</small><strong>86<em>/100</em></strong><div className="star-row">★★★★★</div><span className="tag">良好</span><div className="tag-list"><i>Python</i><i>Django</i><i>机器学习</i></div></div><div><b>评估摘要</b><p>• 项目经验清晰，工程规范良好</p><p>• 技术选型合理，解决方案可行</p><p>• 具备较强的问题解决能力</p><b>推荐面试重点</b><ol><li>深入了解模型训练优化策略</li><li>探讨大规模性能优化方案</li><li>评估代码设计与可扩展性</li></ol><a>查看完整报告 →</a></div></div>
     </article>
   );
@@ -192,28 +192,28 @@ function AdminPanel() {
   return (
     <article className="mini-product-card admin-card">
       <nav>{["用户管理","项目管理","模板配置","数据统计"].map((item,index) => <span className={index === 3 ? "active" : ""} key={item}>{item}</span>)}</nav>
-      <div className="stat-grid">{[["用户总数","1,248","+12%"],["项目总数","3,562","+10%"],["面试总数","2,891","+15%"],["通过率","78%","+6%"]].map(([name,value,change]) => <div key={name}><small>{name}</small><strong>{value}</strong><em>{change}</em></div>)}</div>
-      <div className="dashboard-grid"><div><strong>使用趋势（近 30 天）</strong><svg viewBox="0 0 420 110"><polyline points="0,95 35,73 70,86 105,50 140,76 175,35 210,66 245,42 280,75 315,58 350,27 385,52 420,48" fill="none" stroke="#0066cc" strokeWidth="2"/><path d="M0 95 L35 73 L70 86 L105 50 L140 76 L175 35 L210 66 L245 42 L280 75 L315 58 L350 27 L385 52 L420 48 L420 110 L0 110Z" fill="rgba(0,102,204,.06)" /></svg></div><div><strong>热门技术栈 TOP 5</strong>{[["Python",45],["JavaScript",30],["Java",20],["Go",12],["C++",6]].map(([name,value]) => <p key={name}>{name}<i><b style={{width:`${value}%`}} /></i><small>{value}%</small></p>)}</div></div>
+      <div className="stat-grid">{[["用户总数","1,248","+12%"],["项目总数","3,562","+10%"],["面试总数","2,891","+15%"],["通过率","78%","+6%"]].map(([name,value,change], index) => <div key={name}><i>{String(index + 1).padStart(2,"0")}</i><small>{name}</small><strong>{value}</strong><em>{change}</em></div>)}</div>
+      <div className="dashboard-grid"><div className="trend-card"><header><strong>使用趋势</strong><small>近 30 天</small></header><svg viewBox="0 0 420 138" role="img" aria-label="近 30 天使用趋势折线图"><defs><linearGradient id="trend-area" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#2378f5" stopOpacity=".18"/><stop offset="1" stopColor="#2378f5" stopOpacity="0"/></linearGradient></defs><g className="chart-grid"><line x1="0" y1="25" x2="420" y2="25"/><line x1="0" y1="65" x2="420" y2="65"/><line x1="0" y1="105" x2="420" y2="105"/></g><path d="M0 108 L35 82 L70 96 L105 59 L140 84 L175 43 L210 72 L245 49 L280 82 L315 66 L350 35 L385 59 L420 55 L420 126 L0 126Z" fill="url(#trend-area)"/><polyline points="0,108 35,82 70,96 105,59 140,84 175,43 210,72 245,49 280,82 315,66 350,35 385,59 420,55" fill="none" stroke="#2378f5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/><g className="chart-points">{[[35,82],[105,59],[175,43],[245,49],[350,35],[420,55]].map(([cx,cy]) => <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3.5"/>)}</g><g className="chart-labels"><text x="0" y="137">5/01</text><text x="185" y="137">5/15</text><text x="388" y="137">5/30</text></g></svg></div><div className="stack-card"><header><strong>热门技术栈 TOP 5</strong><small>项目占比</small></header>{[["Python",45],["JavaScript",30],["Java",20],["Go",12],["C++",6]].map(([name,value]) => <p key={name}><span>{name}</span><i><b style={{width:`${value}%`}} /></i><small>{value}%</small></p>)}</div></div>
     </article>
   );
 }
 
 export default function CapabilitiesPage() {
   return (
-    <><SiteHeader current="capabilities" /><main className="capabilities-page">
-      <section className="cap-hero">
-        <div className="cap-container cap-hero-grid"><Reveal><div className="cap-hero-copy"><span>产品能力</span><h1>{HERO_TITLE}</h1><p>码途 AI 连接项目解析、代码审查、模拟面试、能力报告与分享授权，让每个技术项目都能被准确理解、公正评估、清晰呈现。</p><div className="hero-benefits">{heroBenefits.map(({icon:IconComponent,title,text}) => <div key={title}><IconComponent/><span><strong>{title}</strong><small>{text}</small></span></div>)}</div></div></Reveal><Reveal><div className="process-card">{processSteps.map(({icon:IconComponent,title},index) => <div className="process-step" key={title}><i><IconComponent /></i><small>{String(index + 1).padStart(2,"0")}</small><strong>{title}</strong></div>)}<div className="process-track"><i/><i/><i/><i/><i/><i/></div><div className="process-loop">完整评估闭环</div></div></Reveal></div>
+    <><SiteHeader current="capabilities" /><main className="capabilities-page"><CapabilitiesRevealManager />
+      <section className="cap-hero cap-reveal-section is-visible">
+        <div className="cap-container cap-hero-grid"><div className="cap-hero-copy"><span data-cap-reveal-item>产品能力</span><h1 data-cap-reveal-item data-cap-reveal-delay="1" aria-label={HERO_TITLE}>从项目审查到<span className="cap-title-nowrap">能力报告</span>，<br/>形成完整评估闭环</h1><p data-cap-reveal-item data-cap-reveal-delay="2">码途 AI 连接项目解析、代码审查、模拟面试、能力报告与分享授权，让每个技术项目都能被准确理解、公正评估、清晰呈现。</p><div className="hero-benefits" data-cap-reveal-item data-cap-reveal-delay="3">{heroBenefits.map(({icon:IconComponent,title,text}) => <div key={title}><IconComponent/><span><strong>{title}</strong><small>{text}</small></span></div>)}</div></div><div className="process-card" data-cap-reveal-item data-cap-reveal-delay="4">{processSteps.map(({icon:IconComponent,title},index) => <div className="process-step" key={title}><i><IconComponent /></i><small>{String(index + 1).padStart(2,"0")}</small><strong>{title}</strong></div>)}<div className="process-track"><i/><i/><i/><i/><i/><i/></div><div className="process-loop"><span>完整评估闭环</span></div></div></div>
       </section>
 
-      <section className="cap-section"><Reveal><div className="cap-container cap-two-column"><SectionCopy number="01" label="项目上传与解析" title="从一个项目开始，理解你的技术能力" description="支持多种来源导入，AI 自动解析并提取关键信息，快速建模项目画像。" features={sections.upload}/><ProjectOverview /></div></Reveal></section>
-      <section className="cap-section cap-section-tint"><Reveal><div className="cap-container cap-two-column"><SectionCopy number="02" label="AI 项目审查" title="不只看项目能不能跑，更看工程质量" description="AI 深度审查代码质量与工程规范，识别潜在风险，给出改进建议。" features={sections.review}/><ReviewPanel /></div></Reveal></section>
-      <section className="cap-section"><Reveal><div className="cap-container cap-two-column"><SectionCopy number="03" label="AI 模拟面试" title="让每个项目，都能变成一次真实面试" description="基于项目内容生成针对性问题，模拟真实面试场景，全面评估技术深度。" features={sections.interview}/><InterviewPanel /></div></Reveal></section>
-      <section className="cap-section cap-section-tint"><Reveal><div className="cap-container cap-two-column"><SectionCopy number="04" label="能力报告生成" title="把项目表现，转化为清晰的能力报告" description="多维度量化评估，AI 总结关键亮点与改进空间，生成专业报告。" features={sections.report}/><ReportPanel /></div></Reveal></section>
-      <section className="cap-section"><Reveal><div className="cap-container cap-two-column"><SectionCopy number="05" label="分享授权" title="分享给面试官，但权限始终由你控制" description="安全、可控地分享报告给指定面试官，支持权限与有效期管理。" features={[[Send,"投递授权",""],[LockKeyhole,"权限控制",""],[CalendarClock,"有效期",""],[RotateCcw,"可撤销",""]]}/><SharePanel /></div></Reveal></section>
+      <section className="cap-section cap-reveal-section"><div className="cap-container cap-two-column"><SectionCopy number="01" label="项目上传与解析" title="从一个项目开始，理解你的技术能力" description="支持多种来源导入，AI 自动解析并提取关键信息，快速建模项目画像。" features={sections.upload}/><div className="cap-mockup" data-cap-reveal-item data-cap-reveal-delay="4"><ProjectOverview /></div></div></section>
+      <section className="cap-section cap-section-tint cap-reveal-section"><div className="cap-container cap-two-column"><SectionCopy number="02" label="AI 项目审查" title="不只看项目能不能跑，更看工程质量" description="AI 深度审查代码质量与工程规范，识别潜在风险，给出改进建议。" features={sections.review}/><div className="cap-mockup" data-cap-reveal-item data-cap-reveal-delay="4"><ReviewPanel /></div></div></section>
+      <section className="cap-section cap-reveal-section"><div className="cap-container cap-two-column"><SectionCopy number="03" label="AI 模拟面试" title="让每个项目，都能变成一次真实面试" description="基于项目内容生成针对性问题，模拟真实面试场景，全面评估技术深度。" features={sections.interview}/><div className="cap-mockup" data-cap-reveal-item data-cap-reveal-delay="4"><InterviewPanel /></div></div></section>
+      <section className="cap-section cap-section-tint cap-reveal-section"><div className="cap-container cap-two-column"><SectionCopy number="04" label="能力报告生成" title="把项目表现，转化为清晰的能力报告" description="多维度量化评估，AI 总结关键亮点与改进空间，生成专业报告。" features={sections.report}/><div className="cap-mockup" data-cap-reveal-item data-cap-reveal-delay="4"><ReportPanel /></div></div></section>
+      <section className="cap-section cap-reveal-section"><div className="cap-container cap-two-column"><SectionCopy number="05" label="分享授权" title="分享给面试官，但权限始终由你控制" description="安全、可控地分享报告给指定面试官，支持权限与有效期管理。" features={[[Send,"投递授权",""],[LockKeyhole,"权限控制",""],[CalendarClock,"有效期",""],[RotateCcw,"可撤销",""]]}/><div className="cap-mockup" data-cap-reveal-item data-cap-reveal-delay="4"><SharePanel /></div></div></section>
 
-      <section className="cap-dual-section"><Reveal><div className="cap-container dual-grid"><div><SectionCopy number="06" label="面试官辅助评估" title="为面试官提供高效评估辅助" description="快速把握候选人项目与特点，AI 提供评估建议与面试问题参考。" features={[]}/><CandidatePanel /></div><div><SectionCopy number="07" label="管理员配置" title="灵活配置与数据洞察" description="管理员可配置评估模板、管理用户与项目、洞察使用数据。" features={[]}/><AdminPanel /></div></div></Reveal></section>
+      <section className="cap-dual-section cap-reveal-section"><div className="cap-container dual-grid"><div data-cap-reveal-item><SectionCopy number="06" label="面试官辅助评估" title="为面试官提供高效评估辅助" description="快速把握候选人项目与特点，AI 提供评估建议与面试问题参考。" features={[]}/><CandidatePanel /></div><div data-cap-reveal-item data-cap-reveal-delay="4"><SectionCopy number="07" label="管理员配置" title="灵活配置与数据洞察" description="管理员可配置评估模板、管理用户与项目、洞察使用数据。" features={[]}/><AdminPanel /></div></div></section>
 
-      <section className="cap-bottom"><div className="cap-container"><Reveal><div className="cap-cta"><Logo compact/><div><h2>从项目到面试，从能力到报告</h2><p>码途 AI 让技术能力被准确理解，让优秀人才脱颖而出。</p></div><div><Link href="/login">立即体验</Link><button type="button">查看使用流程 <ArrowRight /></button></div></div></Reveal><footer className="cap-footer"><div><Logo /><p>让项目能力被看见，让优秀人才脱颖而出。</p><small>© 2026 码途 AI. All rights reserved.</small></div><dl><div><dt>产品</dt><dd>产品能力</dd><dd>使用流程</dd><dd>报告示例</dd></div><div><dt>资源</dt><dd>帮助中心</dd><dd>常见问题</dd><dd>更新日志</dd></div><div><dt>关于我们</dt><dd>关于我们</dd><dd>加入我们</dd><dd>联系我们</dd></div><div><dt>关注我们</dt><dd>微信　GitHub　LinkedIn</dd></div></dl></footer></div></section>
+      <section className="cap-bottom cap-reveal-section"><div className="cap-container"><div className="cap-cta" data-cap-reveal-item><Logo compact/><div><h2>从项目到面试，从能力到报告</h2><p>码途 AI 让技术能力被准确理解，让优秀人才脱颖而出。</p></div><div><Link href="/login">立即体验</Link><button type="button">查看使用流程 <ArrowRight /></button></div></div><footer className="cap-footer" data-cap-reveal-item data-cap-reveal-delay="2"><div><Logo /><p>让项目能力被看见，让优秀人才脱颖而出。</p><small>© 2026 码途 AI. All rights reserved.</small></div><dl><div><dt>产品</dt><dd>产品能力</dd><dd>使用流程</dd><dd>报告示例</dd></div><div><dt>资源</dt><dd>帮助中心</dd><dd>常见问题</dd><dd>更新日志</dd></div><div><dt>关于我们</dt><dd>关于我们</dd><dd>加入我们</dd><dd>联系我们</dd></div><div><dt>关注我们</dt><dd>微信　GitHub　LinkedIn</dd></div></dl></footer></div></section>
     </main></>
   );
 }
