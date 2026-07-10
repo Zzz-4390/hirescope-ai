@@ -1,13 +1,16 @@
-import { InterviewQuestionsResultSchema } from '@hirescope/shared-types'; import { InterviewStatus, Prisma, PrismaClient, ProjectStatus, TaskStatus, TaskType } from '@prisma/client'; import type { DeterministicInterviewQuestionService } from '../interview/deterministic-interview-question.service';
+import { InterviewQuestionsResultSchema } from '@hirescope/shared-types'; import { InterviewStatus, Prisma, PrismaClient, ProjectStatus, TaskStatus, TaskType } from '@prisma/client'; import { InterviewQuestionGenerationError } from '../interview/ai-interview-question.service'; import type { InterviewQuestionGenerator } from '../interview/interview-question-generator';
 const TERMINAL = new Set<TaskStatus>([TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED]); type Locked = { interviewStatus: InterviewStatus; projectStatus: ProjectStatus };
 export class InterviewQuestionProcessor {
-  constructor(private readonly prisma: PrismaClient, private readonly generator: DeterministicInterviewQuestionService) {}
+  constructor(private readonly prisma: PrismaClient, private readonly generator: InterviewQuestionGenerator) {}
   async process(taskId: string): Promise<void> {
-    const task = await this.prisma.asyncTask.findUnique({ where: { id: taskId }, include: { interview: { select: { id: true, status: true, questionCount: true, difficulty: true } }, project: { select: { id: true, status: true, analysis: { select: { techStack: true, coreModules: true, statistics: true } }, codeReviews: { where: { status: TaskStatus.SUCCEEDED }, orderBy: { completedAt: 'desc' }, take: 1, select: { summary: true, result: true } } } } } });
+    const task = await this.prisma.asyncTask.findUnique({ where: { id: taskId }, include: { interview: { select: { id: true, status: true, questionCount: true, difficulty: true } }, project: { select: { id: true, status: true, analysis: { select: { summary: true, techStack: true, coreModules: true, statistics: true } }, codeReviews: { where: { status: TaskStatus.SUCCEEDED }, orderBy: { completedAt: 'desc' }, take: 1, select: { summary: true, result: true } } } } } });
     if (!task || task.type !== TaskType.INTERVIEW_QUESTION_GENERATION || !task.interviewId || !task.interview || !task.projectId || !task.project) throw new Error('TASK_NOT_FOUND');
     if (task.interview.status === InterviewStatus.READY || task.status === TaskStatus.SUCCEEDED) return; if (TERMINAL.has(task.status)) return; if (task.status === TaskStatus.PENDING) throw new Error('TASK_NOT_READY');
     if (!await this.claim(task.id, task.interviewId, task.projectId)) return; if (!task.project.analysis) return this.fail(task.id, task.interviewId, 'PROJECT_ANALYSIS_MISSING');
-    const questionCount = task.interview.questionCount; const difficulty = task.interview.difficulty; const candidate = this.generator.generate(task.project.analysis, task.project.codeReviews[0] ?? null, questionCount, difficulty); const parsed = InterviewQuestionsResultSchema.safeParse(candidate);
+    const questionCount = task.interview.questionCount; const difficulty = task.interview.difficulty; let candidate: unknown;
+    try { candidate = await this.generator.generate(task.project.analysis, task.project.codeReviews[0] ?? null, questionCount, difficulty, { userId: task.userId, projectId: task.projectId, taskId: task.id }); }
+    catch (error) { return this.fail(task.id, task.interviewId, error instanceof InterviewQuestionGenerationError ? error.code : 'INTERVIEW_QUESTION_GENERATION_FAILED'); }
+    const parsed = InterviewQuestionsResultSchema.safeParse(candidate);
     const valid = parsed.success && parsed.data.questions.length === questionCount && parsed.data.questions.every((question, index) => question.sequence === index + 1 && question.difficulty === difficulty);
     if (!valid || !parsed.success) return this.fail(task.id, task.interviewId, 'INTERVIEW_QUESTIONS_RESULT_INVALID'); await this.finish(task.id, task.interviewId, task.projectId, parsed.data);
   }

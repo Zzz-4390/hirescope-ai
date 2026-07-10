@@ -13,6 +13,9 @@ import { DeterministicInterviewQuestionService } from './interview/deterministic
 import { InterviewQuestionProcessor } from './processors/interview-question.processor';
 import { DeterministicInterviewReportService } from './interview/deterministic-interview-report.service';
 import { InterviewReportProcessor } from './processors/interview-report.processor';
+import { OpenAiCompatibleProvider, type OpenAiCompatibleProviderConfig } from './ai/openai-compatible.provider';
+import { AiInterviewQuestionService } from './interview/ai-interview-question.service';
+import type { InterviewQuestionGenerator } from './interview/interview-question-generator';
 
 export function createTaskHandler(prisma: PrismaClient, analysis: ProjectAnalysisProcessor, cleanup: ProjectCleanupProcessor, codeReview?: CodeReviewProcessor, interviewQuestions?: InterviewQuestionProcessor, interviewReports?: InterviewReportProcessor) {
   return async (job: Job): Promise<void> => {
@@ -37,7 +40,17 @@ export function redisConnection(redisUrl: string) {
   return { host: url.hostname, port: Number(url.port || 6379), username: url.username || undefined, password: url.password || undefined, db: Number(url.pathname.slice(1) || 0) };
 }
 
-export interface RuntimeOptions { redisUrl: string; storageRoot: string; queueName?: string; recoveryBatchSize: number; recoveryIntervalMs: number; limits: ExtractionLimits }
+export interface RuntimeOptions { redisUrl: string; storageRoot: string; queueName?: string; recoveryBatchSize: number; recoveryIntervalMs: number; limits: ExtractionLimits; ai?: OpenAiCompatibleProviderConfig }
+
+export function createInterviewQuestionGenerator(prisma: PrismaClient, config?: OpenAiCompatibleProviderConfig): InterviewQuestionGenerator {
+  if (!config) return new DeterministicInterviewQuestionService();
+  const provider = new OpenAiCompatibleProvider(config);
+  return new AiInterviewQuestionService(provider, {
+    async record(entry) {
+      await prisma.aiCallLog.create({ data: entry });
+    },
+  });
+}
 
 export async function startWorkerRuntime(options: RuntimeOptions) {
   const prisma = new PrismaClient();
@@ -48,7 +61,7 @@ export async function startWorkerRuntime(options: RuntimeOptions) {
   const analysis = new ProjectAnalysisProcessor(prisma, paths, new ZipExtractorService(options.limits), new ProjectAnalyzerService(options.limits.maxTextReadBytes));
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
   const codeReview = new CodeReviewProcessor(prisma, new DeterministicCodeReviewService());
-  const interviewQuestions = new InterviewQuestionProcessor(prisma, new DeterministicInterviewQuestionService());
+  const interviewQuestions = new InterviewQuestionProcessor(prisma, createInterviewQuestionGenerator(prisma, options.ai));
   const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
   const recovery = new TaskRecoveryService(prisma, queue, options.recoveryBatchSize);
   const worker = new Worker(options.queueName ?? TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions, interviewReports), { connection, concurrency: 2 });

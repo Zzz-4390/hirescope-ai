@@ -1,5 +1,5 @@
 import type { InterviewQuestionsResult } from '@hirescope/shared-types'; import type { InterviewDifficulty } from '@prisma/client';
-interface AnalysisInput { techStack: unknown; coreModules: unknown; statistics: unknown }
+import type { InterviewAnalysisInput } from './interview-question-generator';
 const TEMPLATES = [
   ['architecture', '请说明项目的整体架构以及模块边界。', ['说明主要层次', '说明模块职责', '说明依赖方向']],
   ['implementation', '请选择一个核心模块，说明其实现思路。', ['说明输入输出', '说明核心流程', '说明异常处理']],
@@ -18,7 +18,7 @@ const TEMPLATES = [
   ['tradeoff', '请举例说明本项目中的一个技术取舍。', ['备选方案', '决策依据', '后续演进']],
 ] as const;
 export class DeterministicInterviewQuestionService {
-  generate(analysis: AnalysisInput, latestReview: unknown, questionCount: number, difficulty: InterviewDifficulty): InterviewQuestionsResult {
+  generate(analysis: InterviewAnalysisInput, latestReview: unknown, questionCount: number, difficulty: InterviewDifficulty): InterviewQuestionsResult {
     const stack = Array.isArray(analysis.techStack) ? analysis.techStack : []; const modules = Array.isArray(analysis.coreModules) ? analysis.coreModules : [];
     return { questions: Array.from({ length: questionCount }, (_, index) => { const template = TEMPLATES[index % TEMPLATES.length]!; const context = index === 0 ? ` 已识别 ${stack.length} 项技术栈和 ${modules.length} 个核心模块。` : latestReview && index === 1 ? ' 请结合最近一次代码审查结果。' : ''; return { sequence: index + 1, category: template[0], difficulty, question: `${template[1]}${context}`, referencePoints: [...template[2]] }; }) };
   }
