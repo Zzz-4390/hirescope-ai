@@ -134,7 +134,7 @@ export function ProjectDetailClient({ projectId }: ProjectDetailClientProps) {
             <div className="page-actions">
               <StatusBadge status={project.status} />
               <Link className="primary-button compact" href={`/app/projects/${project.id}/review`}>
-                代码审查
+                查看/生成代码审查
               </Link>
             </div>
           </div>
