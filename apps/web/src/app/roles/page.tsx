@@ -11,7 +11,7 @@ const roles=[
 ] as const;
 const rows=[["上传项目",1,0,0],["查看报告",1,1,1],["模拟面试",1,0,0],["分享授权",1,1,1],["项目评估",0,1,0],["系统管理",0,0,1]] as const;
 
-export default function RolesPage(){return <><SiteHeader/><main className="role-entry-page"><RoleRevealManager/>
+export default function RolesPage(){return <><SiteHeader current="roles"/><main className="role-entry-page"><RoleRevealManager/>
   <section className="role-hero role-reveal-section is-visible"><div className="role-container role-hero-grid"><div data-role-reveal-item><span>角色入口</span><h1>选择你的角色，<br/>开启专属体验</h1><p>求职者、面试官与管理员在码途 AI 各自拥有独立的入口与专属工作空间。</p></div><div className="role-orbit" data-role-reveal-item><div className="orbit-center"><Logo compact/></div><article className="orbit-one"><CircleUserRound/><b>求职者</b><small>项目能力报告</small></article><article className="orbit-two"><FileSearch/><b>面试官</b><small>候选人评估</small></article><article className="orbit-three"><ShieldCheck/><b>管理员</b><small>平台管理</small></article></div></div></section>
   <section className="role-section role-reveal-section"><div className="role-container" data-role-reveal-item><h2>三类角色入口</h2><div className="role-card-grid">{roles.map(([Icon,title,text,cta])=><article key={title}><i><Icon/></i><h3>{title}</h3><p>{text}</p><Link href="/login">{cta} <ArrowRight/></Link></article>)}</div></div></section>
   <section className="role-section role-reveal-section"><div className="role-container" data-role-reveal-item><h2>角色能力对比</h2><div className="role-table"><header><span/><b>求职者</b><b>面试官</b><b>管理员</b></header>{rows.map(([label,...values])=><div key={label}><strong>{label}</strong>{values.map((value,index)=><span key={`${label}-${index}`} className={value?"yes":"no"}>{value?<Check/>:"—"}</span>)}</div>)}</div></div></section>

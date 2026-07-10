@@ -1,5 +1,6 @@
 "use client";
 
+import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -9,18 +10,19 @@ import { Logo } from "./Logo";
 const navItems = [
   { label: "首页", href: "/", key: "home" },
   { label: "产品能力", href: "/capabilities", key: "capabilities" },
-  { label: "使用流程" },
-  { label: "报告示例" },
-  { label: "角色入口" },
-  { label: "帮助中心" },
+  { label: "使用流程", href: "/process", key: "process" },
+  { label: "报告示例", href: "/reports", key: "reports" },
+  { label: "角色入口", href: "/roles", key: "roles" },
+  { label: "帮助中心", href: "/help", key: "help" },
 ] as const;
 
 interface SiteHeaderProps {
-  current?: "home" | "capabilities" | "login";
+  current?: "home" | "capabilities" | "process" | "reports" | "roles" | "help" | "login";
 }
 
 export function SiteHeader({ current = "home" }: SiteHeaderProps) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const updateAuthState = () => setIsLoggedIn(Boolean(getAccessToken()));
@@ -40,17 +42,11 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
           <Logo />
         </Link>
         <nav className="desktop-nav" aria-label="主导航">
-          {navItems.map((item) =>
-            "href" in item ? (
-              <Link key={item.label} className={current === item.key ? "active" : ""} href={item.href}>
-                {item.label}
-              </Link>
-            ) : (
-              <button key={item.label} type="button" aria-disabled="true" title="该页面暂未开放">
-                {item.label}
-              </button>
-            ),
-          )}
+          {navItems.map((item) => (
+            <Link key={item.label} className={current === item.key ? "active" : ""} href={item.href}>
+              {item.label}
+            </Link>
+          ))}
         </nav>
         <div className="header-actions">
           {isLoggedIn ? (
@@ -59,8 +55,31 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
             <Link className={current === "login" ? "active" : ""} href="/login">登录</Link>
           )}
           <Link className="header-cta" href="/login">立即体验</Link>
+          <button
+            className="mobile-nav-toggle"
+            type="button"
+            aria-expanded={isMobileNavOpen}
+            aria-label={isMobileNavOpen ? "关闭导航菜单" : "打开导航菜单"}
+            onClick={() => setIsMobileNavOpen((value) => !value)}
+          >
+            {isMobileNavOpen ? <X /> : <Menu />}
+          </button>
         </div>
       </div>
+      {isMobileNavOpen ? (
+        <nav className="mobile-nav-panel" aria-label="移动端导航">
+          {navItems.map((item) => (
+            <Link
+              key={item.label}
+              className={current === item.key ? "active" : ""}
+              href={item.href}
+              onClick={() => setIsMobileNavOpen(false)}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
     </header>
   );
 }
