@@ -31,6 +31,21 @@ describe('validateEnvironment', () => {
     expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'http://localhost:3000' })).toThrow();
   });
 
+  it('accepts localhost HTTP only in development', () => {
+    expect(validateEnvironment({
+      ...validEnvironment,
+      NODE_ENV: 'development',
+      CORS_ALLOWED_ORIGINS: 'http://localhost:3000,https://app.example.com',
+    })).toMatchObject({
+      CORS_ALLOWED_ORIGINS: ['http://localhost:3000', 'https://app.example.com'],
+    });
+    expect(() => validateEnvironment({
+      ...validEnvironment,
+      NODE_ENV: 'development',
+      CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+    })).toThrow();
+  });
+
   it('rejects weak or shared token secrets', () => {
     expect(() => validateEnvironment({ ...validEnvironment, JWT_ACCESS_SECRET: 'short' })).toThrow();
     expect(() => validateEnvironment({ ...validEnvironment, AUTH_REFRESH_HASH_SECRET: validEnvironment.JWT_ACCESS_SECRET })).toThrow();

@@ -3,11 +3,13 @@
 !.env.example
 node_modules/
 .pnpm-store/
+.codex/
 .worktrees/
 dist/
 build/
 .next/
 coverage/
 *.log
+*.tsbuildinfo
 storage/*
 !storage/.gitkeep

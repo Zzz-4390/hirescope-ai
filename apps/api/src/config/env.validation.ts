@@ -19,9 +19,18 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
     throw new Error('Auth secrets must be distinct and at least 32 characters');
   }
 
+  const nodeEnv = typeof env.NODE_ENV === 'string' ? env.NODE_ENV : 'production';
   const origins = requiredString(env, 'CORS_ALLOWED_ORIGINS').split(',').map((value) => value.trim());
-  if (origins.some((origin) => origin === '*' || new URL(origin).protocol !== 'https:' || new URL(origin).origin !== origin)) {
-    throw new Error('CORS_ALLOWED_ORIGINS must contain exact HTTPS origins');
+  const invalidOrigin = origins.some((origin) => {
+    if (origin === '*') return true;
+    const parsed = new URL(origin);
+    const isExactOrigin = parsed.origin === origin;
+    if (!isExactOrigin) return true;
+    if (parsed.protocol === 'https:') return false;
+    return !(nodeEnv === 'development' && origin === 'http://localhost:3000');
+  });
+  if (invalidOrigin) {
+    throw new Error('CORS_ALLOWED_ORIGINS must contain exact HTTPS origins, except http://localhost:3000 in development');
   }
 
   const dummyHash = requiredString(env, 'AUTH_DUMMY_PASSWORD_HASH');

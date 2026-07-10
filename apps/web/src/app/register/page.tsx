@@ -1,13 +1,13 @@
-import { LoginForm } from "../../components/LoginForm";
+import { RegisterForm } from "../../components/RegisterForm";
 import { SiteHeader } from "../../components/SiteHeader";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <div className="login-page">
       <SiteHeader current="login" />
       <main className="login-main">
-        <h1>现在登录，让面试准备更高效。</h1>
-        <LoginForm />
+        <h1>创建账户，开始分析你的项目能力。</h1>
+        <RegisterForm />
       </main>
       <footer className="login-footer">
         <span>© 2026 码途 AI（HireScope AI）保留所有权利</span>
