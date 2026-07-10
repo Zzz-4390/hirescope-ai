@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, MessageSquareText, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -135,6 +135,10 @@ export function ProjectDetailClient({ projectId }: ProjectDetailClientProps) {
               <StatusBadge status={project.status} />
               <Link className="primary-button compact" href={`/app/projects/${project.id}/review`}>
                 查看/生成代码审查
+              </Link>
+              <Link className="ghost-action" href={`/app/projects/${project.id}/interviews`}>
+                <MessageSquareText aria-hidden="true" />
+                模拟面试
               </Link>
             </div>
           </div>
