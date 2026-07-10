@@ -8,6 +8,7 @@ node_modules/
 dist/
 build/
 .next/
+apps/web/next-env.d.ts
 coverage/
 *.log
 *.tsbuildinfo
