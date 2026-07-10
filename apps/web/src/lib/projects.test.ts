@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getProject, getProjectAnalysis, listProjects, uploadProject } from "./projects";
+import { getProject, getProjectAnalysis, getTask, listProjects, uploadProject } from "./projects";
 
 describe("projects api", () => {
   beforeEach(() => {
@@ -63,5 +63,20 @@ describe("projects api", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/v1/projects/project-1", expect.any(Object));
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/v1/projects/project-1/analysis", expect.any(Object));
+  });
+
+  it("loads async task status for workflow polling", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "task-1", status: "PROCESSING", progress: 40 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(getTask("task-1")).resolves.toMatchObject({ status: "PROCESSING", progress: 40 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/tasks/task-1",
+      expect.objectContaining({ credentials: "include" }),
+    );
   });
 });
