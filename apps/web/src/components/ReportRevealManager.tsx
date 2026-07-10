@@ -1,0 +1,23 @@
+"use client";
+import { useEffect } from "react";
+
+export function ReportRevealManager() {
+  useEffect(() => {
+    const page = document.querySelector<HTMLElement>(".report-example-page");
+    if (!page) return;
+    const sections = Array.from(page.querySelectorAll<HTMLElement>(".report-reveal-section"));
+    page.dataset.reportRevealReady = "true";
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || !("IntersectionObserver" in window)) {
+      sections.forEach((section) => section.classList.add("is-visible"));
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-visible");
+      observer.unobserve(entry.target);
+    }), { threshold: .12, rootMargin: "0px 0px -8%" });
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
+  return null;
+}
