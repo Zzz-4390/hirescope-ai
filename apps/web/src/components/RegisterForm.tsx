@@ -68,12 +68,12 @@ export function RegisterForm() {
         <input
           type="password"
           autoComplete="new-password"
-          placeholder="至少 8 位密码"
+          placeholder="至少 6 位密码"
           aria-label="密码"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           required
-          minLength={8}
+          minLength={6}
         />
       </label>
       <div className="form-message-slot">

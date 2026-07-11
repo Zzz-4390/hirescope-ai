@@ -33,6 +33,11 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
     throw new Error('CORS_ALLOWED_ORIGINS must contain exact HTTPS origins, except http://localhost:3000 in development');
   }
 
+  const cookieName = requiredString(env, 'AUTH_COOKIE_NAME');
+  if (nodeEnv === 'development' && origins.includes('http://localhost:3000') && cookieName.startsWith('__Secure-')) {
+    throw new Error('AUTH_COOKIE_NAME must not use the __Secure- prefix for localhost HTTP development');
+  }
+
   const dummyHash = requiredString(env, 'AUTH_DUMMY_PASSWORD_HASH');
   if (!dummyHash.startsWith('$argon2id$')) throw new Error('AUTH_DUMMY_PASSWORD_HASH must be Argon2id');
   const accessTtl = integer(env, 'JWT_ACCESS_TTL_SECONDS');

@@ -14,10 +14,12 @@ describe('auth DTOs', () => {
     expect(dto.displayName).toBe('张三');
   });
 
-  it('does not trim passwords and rejects short registration passwords', async () => {
-    const dto = plainToInstance(RegisterDto, { email: 'user@example.com', password: ' short ' });
-    expect(dto.password).toBe(' short ');
-    expect(await validate(dto)).not.toHaveLength(0);
+  it('does not trim passwords and enforces a six-character minimum', async () => {
+    const short = plainToInstance(RegisterDto, { email: 'user@example.com', password: '12345' });
+    const minimum = plainToInstance(RegisterDto, { email: 'user@example.com', password: '123456' });
+    expect(short.password).toBe('12345');
+    expect(await validate(short)).not.toHaveLength(0);
+    expect(await validate(minimum)).toHaveLength(0);
   });
 
   it('normalizes login email', async () => {

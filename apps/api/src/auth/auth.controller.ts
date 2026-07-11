@@ -76,7 +76,7 @@ export class AuthController {
   }
 
   private cookieOptions() {
-    return { httpOnly: true, secure: true, sameSite: 'lax' as const, path: '/api/v1/auth' };
+    return { httpOnly: true, secure: this.config.secureCookies, sameSite: 'lax' as const, path: '/api/v1/auth' };
   }
 
   private ip(request: Request): string {
