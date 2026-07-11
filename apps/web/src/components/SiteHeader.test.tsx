@@ -1,12 +1,15 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SiteHeader } from "./SiteHeader";
 
 describe("SiteHeader", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
 
-  it("links login and primary action to /login", () => {
+  it("links login and signed-out primary action to /login", () => {
     render(<SiteHeader />);
 
     expect(screen.getByRole("link", { name: "登录" })).toHaveAttribute(
@@ -54,13 +57,25 @@ describe("SiteHeader", () => {
     expect(screen.getAllByRole("link", { name: "帮助中心" }).at(-1)).toHaveAttribute("href", "/help");
   });
 
-  it("shows logged-in state when an access token exists", () => {
+  it("shows logged-in state after the access token is validated", async () => {
     localStorage.setItem("hirescope.accessToken", "token-123");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "user-1", email: "candidate@example.com" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
 
     render(<SiteHeader />);
 
-    expect(screen.getByText("已登录")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "登录" })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("已登录")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "登录" })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "立即体验" })).toHaveAttribute(
+        "href",
+        "/app",
+      );
+    });
   });
 
   it("only marks login active on the login route", () => {

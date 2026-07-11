@@ -4,7 +4,7 @@ import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "../lib/auth";
+import { getAccessToken, getCurrentUser } from "../lib/auth";
 import { Logo } from "./Logo";
 
 const navItems = [
@@ -25,11 +25,28 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    const updateAuthState = () => setIsLoggedIn(Boolean(getAccessToken()));
-    updateAuthState();
+    let mounted = true;
+
+    const validateAuthState = () => {
+      getCurrentUser()
+        .then(() => {
+          if (mounted) setIsLoggedIn(true);
+        })
+        .catch(() => {
+          if (mounted) setIsLoggedIn(false);
+        });
+    };
+
+    const updateAuthState = () => {
+      if (getAccessToken()) validateAuthState();
+      else setIsLoggedIn(false);
+    };
+
+    if (getAccessToken()) validateAuthState();
     window.addEventListener("auth-change", updateAuthState);
     window.addEventListener("storage", updateAuthState);
     return () => {
+      mounted = false;
       window.removeEventListener("auth-change", updateAuthState);
       window.removeEventListener("storage", updateAuthState);
     };
@@ -54,7 +71,7 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
           ) : (
             <Link className={current === "login" ? "active" : ""} href="/login">登录</Link>
           )}
-          <Link className="header-cta" href="/login">立即体验</Link>
+          <Link className="header-cta" href={isLoggedIn ? "/app" : "/login"}>立即体验</Link>
           <button
             className="mobile-nav-toggle"
             type="button"

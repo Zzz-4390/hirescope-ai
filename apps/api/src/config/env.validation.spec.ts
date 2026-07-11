@@ -36,6 +36,7 @@ describe('validateEnvironment', () => {
       ...validEnvironment,
       NODE_ENV: 'development',
       CORS_ALLOWED_ORIGINS: 'http://localhost:3000,https://app.example.com',
+      AUTH_COOKIE_NAME: 'hirescope_refresh',
     })).toMatchObject({
       CORS_ALLOWED_ORIGINS: ['http://localhost:3000', 'https://app.example.com'],
     });
@@ -44,6 +45,12 @@ describe('validateEnvironment', () => {
       NODE_ENV: 'development',
       CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
     })).toThrow();
+    expect(() => validateEnvironment({
+      ...validEnvironment,
+      NODE_ENV: 'development',
+      CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
+      AUTH_COOKIE_NAME: '__Secure-hirescope_refresh',
+    })).toThrow('AUTH_COOKIE_NAME must not use the __Secure- prefix');
   });
 
   it('rejects weak or shared token secrets', () => {

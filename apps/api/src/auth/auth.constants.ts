@@ -13,6 +13,7 @@ export interface AuthConfig {
   refreshHashSecret: string;
   refreshTtlSeconds: number;
   cookieName: string;
+  secureCookies: boolean;
   dummyPasswordHash: string;
   argon2: { memoryCost: number; timeCost: number; parallelism: number };
   rateLimits: {
