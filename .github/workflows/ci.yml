@@ -55,16 +55,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up pnpm 11
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.7.0
           run_install: false
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -122,6 +122,9 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
+      - name: Shared Types tests
+        run: pnpm --filter @hirescope/shared-types test
+
       - name: Web lint
         run: pnpm --filter @hirescope/web lint
 
@@ -157,9 +160,6 @@ jobs:
 
       - name: Worker integration tests
         run: pnpm --filter @hirescope/worker test:integration
-
-      - name: Shared Types tests
-        run: pnpm --filter @hirescope/shared-types test
 
       - name: Database constraint tests
         run: pnpm db:test
