@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-validation:
+    name: Full validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+      TEST_DATABASE_URL: ${{ secrets.CI_TEST_DATABASE_URL }}
+      REDIS_URL: ${{ secrets.CI_TEST_REDIS_URL }}
+      TEST_REDIS_URL: ${{ secrets.CI_TEST_REDIS_URL }}
+      JWT_ACCESS_SECRET: ${{ secrets.CI_JWT_ACCESS_SECRET }}
+      AUTH_REFRESH_HASH_SECRET: ${{ secrets.CI_AUTH_REFRESH_HASH_SECRET }}
+      AUTH_DUMMY_PASSWORD_HASH: ${{ secrets.CI_AUTH_DUMMY_PASSWORD_HASH }}
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: hirescope_test
+          POSTGRES_USER: hirescope
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hirescope -d hirescope_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm 11
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Prepare test environment
+        shell: bash
+        run: |
+          umask 077
+          {
+            printf 'NODE_ENV=test\n'
+            printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+            printf 'TEST_DATABASE_URL=%s\n' "$TEST_DATABASE_URL"
+            printf 'REDIS_URL=%s\n' "$REDIS_URL"
+            printf 'TEST_REDIS_URL=%s\n' "$TEST_REDIS_URL"
+            printf 'STORAGE_ROOT=storage\n'
+            printf 'TASK_QUEUE_NAME=hirescope-tasks\n'
+            printf 'TASK_RECOVERY_INTERVAL_MS=30000\n'
+            printf 'TASK_RECOVERY_BATCH_SIZE=100\n'
+            printf 'ZIP_MAX_BYTES=52428800\n'
+            printf 'ZIP_MAX_FILES=5000\n'
+            printf 'ZIP_MAX_SINGLE_FILE_BYTES=2097152\n'
+            printf 'ZIP_MAX_EXTRACTED_BYTES=209715200\n'
+            printf 'ZIP_MAX_DEPTH=30\n'
+            printf 'ANALYSIS_MAX_TEXT_READ_BYTES=1048576\n'
+            printf 'API_HOST=127.0.0.1\n'
+            printf 'API_PORT=3001\n'
+            printf 'CORS_ALLOWED_ORIGINS=https://localhost:3000\n'
+            printf 'TRUST_PROXY_HOPS=0\n'
+            printf 'JWT_ACCESS_SECRET=%s\n' "$JWT_ACCESS_SECRET"
+            printf 'JWT_ACCESS_TTL_SECONDS=900\n'
+            printf 'JWT_ISSUER=hirescope-api\n'
+            printf 'JWT_AUDIENCE=hirescope-web\n'
+            printf 'AUTH_REFRESH_HASH_SECRET=%s\n' "$AUTH_REFRESH_HASH_SECRET"
+            printf 'AUTH_REFRESH_TTL_SECONDS=2592000\n'
+            printf 'AUTH_COOKIE_NAME=__Secure-hirescope_refresh\n'
+            printf 'AUTH_DUMMY_PASSWORD_HASH=%s\n' "$AUTH_DUMMY_PASSWORD_HASH"
+            printf 'AUTH_ARGON2_MEMORY_KIB=19456\n'
+            printf 'AUTH_ARGON2_TIME_COST=2\n'
+            printf 'AUTH_ARGON2_PARALLELISM=1\n'
+            printf 'AUTH_REGISTER_WINDOW_SECONDS=3600\n'
+            printf 'AUTH_REGISTER_MAX_REQUESTS=5\n'
+            printf 'AUTH_LOGIN_WINDOW_SECONDS=900\n'
+            printf 'AUTH_LOGIN_MAX_REQUESTS=10\n'
+            printf 'AUTH_REFRESH_WINDOW_SECONDS=300\n'
+            printf 'AUTH_REFRESH_MAX_REQUESTS=30\n'
+          } > .env
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        run: pnpm db:validate
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Web lint
+        run: pnpm --filter @hirescope/web lint
+
+      - name: Web typecheck
+        run: pnpm --filter @hirescope/web typecheck
+
+      - name: Web tests
+        run: pnpm --filter @hirescope/web test
+
+      - name: Web build
+        run: pnpm --filter @hirescope/web build
+
+      - name: API typecheck
+        run: pnpm --filter @hirescope/api typecheck
+
+      - name: API tests
+        run: pnpm --filter @hirescope/api test
+
+      - name: API build
+        run: pnpm --filter @hirescope/api build
+
+      - name: API E2E tests
+        run: pnpm --filter @hirescope/api test:e2e
+
+      - name: Worker typecheck
+        run: pnpm --filter @hirescope/worker typecheck
+
+      - name: Worker tests
+        run: pnpm --filter @hirescope/worker test
+
+      - name: Worker build
+        run: pnpm --filter @hirescope/worker build
+
+      - name: Worker integration tests
+        run: pnpm --filter @hirescope/worker test:integration
+
+      - name: Shared Types tests
+        run: pnpm --filter @hirescope/shared-types test
+
+      - name: Database constraint tests
+        run: pnpm db:test
+
+      - name: Remove test artifacts
+        if: always()
+        shell: bash
+        run: rm -rf .env storage
