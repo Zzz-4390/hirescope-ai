@@ -2,7 +2,9 @@ import { TaskType } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 import { AiInterviewQuestionService } from './interview/ai-interview-question.service';
 import { DeterministicInterviewQuestionService } from './interview/deterministic-interview-question.service';
-import { createInterviewQuestionGenerator, createTaskHandler } from './runtime';
+import { AiCodeReviewService } from './code-review/ai-code-review.service';
+import { DeterministicCodeReviewService } from './code-review/deterministic-code-review.service';
+import { createCodeReviewGenerator, createInterviewQuestionGenerator, createTaskHandler } from './runtime';
 
 describe('worker runtime routing', () => {
   it('routes by the PostgreSQL task type instead of the BullMQ job name', async () => {
@@ -32,5 +34,15 @@ describe('worker runtime routing', () => {
       apiKey: 'server-only-key',
       model: 'test-model',
     })).toBeInstanceOf(AiInterviewQuestionService);
+  });
+
+  it('uses deterministic code review without AI config and AI review with complete config', () => {
+    const prisma = { aiCallLog: { create: vi.fn() } };
+    expect(createCodeReviewGenerator(prisma as never)).toBeInstanceOf(DeterministicCodeReviewService);
+    expect(createCodeReviewGenerator(prisma as never, {
+      baseUrl: 'https://provider.example/v1',
+      apiKey: 'server-only-key',
+      model: 'test-model',
+    })).toBeInstanceOf(AiCodeReviewService);
   });
 });

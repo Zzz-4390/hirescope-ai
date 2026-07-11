@@ -16,6 +16,8 @@ import { InterviewReportProcessor } from './processors/interview-report.processo
 import { OpenAiCompatibleProvider, type OpenAiCompatibleProviderConfig } from './ai/openai-compatible.provider';
 import { AiInterviewQuestionService } from './interview/ai-interview-question.service';
 import type { InterviewQuestionGenerator } from './interview/interview-question-generator';
+import { AiCodeReviewService } from './code-review/ai-code-review.service';
+import type { CodeReviewGenerator } from './code-review/code-review-generator';
 
 export function createTaskHandler(prisma: PrismaClient, analysis: ProjectAnalysisProcessor, cleanup: ProjectCleanupProcessor, codeReview?: CodeReviewProcessor, interviewQuestions?: InterviewQuestionProcessor, interviewReports?: InterviewReportProcessor) {
   return async (job: Job): Promise<void> => {
@@ -52,6 +54,16 @@ export function createInterviewQuestionGenerator(prisma: PrismaClient, config?: 
   });
 }
 
+export function createCodeReviewGenerator(prisma: PrismaClient, config?: OpenAiCompatibleProviderConfig): CodeReviewGenerator {
+  if (!config) return new DeterministicCodeReviewService();
+  const provider = new OpenAiCompatibleProvider(config);
+  return new AiCodeReviewService(provider, {
+    async record(entry) {
+      await prisma.aiCallLog.create({ data: entry });
+    },
+  });
+}
+
 export async function startWorkerRuntime(options: RuntimeOptions) {
   const prisma = new PrismaClient();
   await prisma.$connect();
@@ -60,7 +72,7 @@ export async function startWorkerRuntime(options: RuntimeOptions) {
   const paths = new StoragePathService(options.storageRoot);
   const analysis = new ProjectAnalysisProcessor(prisma, paths, new ZipExtractorService(options.limits), new ProjectAnalyzerService(options.limits.maxTextReadBytes));
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
-  const codeReview = new CodeReviewProcessor(prisma, new DeterministicCodeReviewService());
+  const codeReview = new CodeReviewProcessor(prisma, createCodeReviewGenerator(prisma, options.ai));
   const interviewQuestions = new InterviewQuestionProcessor(prisma, createInterviewQuestionGenerator(prisma, options.ai));
   const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
   const recovery = new TaskRecoveryService(prisma, queue, options.recoveryBatchSize);

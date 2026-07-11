@@ -1,23 +1,26 @@
 import { CodeReviewResultSchema } from '@hirescope/shared-types';
 import { Prisma, PrismaClient, ProjectStatus, TaskStatus, TaskType } from '@prisma/client';
-import type { DeterministicCodeReviewService } from '../code-review/deterministic-code-review.service';
+import { CodeReviewGenerationError } from '../code-review/ai-code-review.service';
+import type { CodeReviewGenerator, GeneratedCodeReview } from '../code-review/code-review-generator';
 
 const TERMINAL = new Set<TaskStatus>([TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED]);
 type Locked = { reviewStatus: TaskStatus; projectStatus: ProjectStatus };
 
 export class CodeReviewProcessor {
-  constructor(private readonly prisma: PrismaClient, private readonly reviewer: DeterministicCodeReviewService) {}
+  constructor(private readonly prisma: PrismaClient, private readonly reviewer: CodeReviewGenerator) {}
   async process(taskId: string): Promise<void> {
-    const task = await this.prisma.asyncTask.findUnique({ where: { id: taskId }, include: { codeReview: { select: { id: true, status: true } }, project: { select: { id: true, status: true, analysis: { select: { techStack: true, coreModules: true, statistics: true } } } } } });
+    const task = await this.prisma.asyncTask.findUnique({ where: { id: taskId }, include: { codeReview: { select: { id: true, status: true } }, project: { select: { id: true, status: true, analysis: { select: { summary: true, techStack: true, coreModules: true, statistics: true } } } } } });
     if (!task || task.type !== TaskType.CODE_REVIEW || !task.codeReviewId || !task.codeReview || !task.projectId || !task.project) throw new Error('TASK_NOT_FOUND');
     if (task.status === TaskStatus.SUCCEEDED || task.codeReview.status === TaskStatus.SUCCEEDED) return;
     if (TERMINAL.has(task.status)) return;
     if (task.status === TaskStatus.PENDING) throw new Error('TASK_NOT_READY');
     if (!(await this.claim(task.id, task.codeReviewId, task.projectId))) return;
     if (!task.project.analysis) return this.fail(task.id, task.codeReviewId, 'PROJECT_ANALYSIS_MISSING');
-    const generated = this.reviewer.review(task.project.analysis);
+    let generated: GeneratedCodeReview;
+    try { generated = await this.reviewer.review(task.project.analysis, { userId: task.userId, projectId: task.projectId, taskId: task.id }); }
+    catch (error) { return this.fail(task.id, task.codeReviewId, error instanceof CodeReviewGenerationError ? error.code : 'CODE_REVIEW_GENERATION_FAILED'); }
     const parsed = CodeReviewResultSchema.safeParse(generated.result);
-    if (!parsed.success || !Number.isInteger(generated.score) || generated.score < 0 || generated.score > 100 || generated.model !== 'deterministic-code-review-v1') return this.fail(task.id, task.codeReviewId, 'CODE_REVIEW_RESULT_INVALID');
+    if (!parsed.success || typeof generated.summary !== 'string' || generated.summary.length === 0 || !Number.isInteger(generated.score) || generated.score < 0 || generated.score > 100 || typeof generated.model !== 'string' || generated.model.length === 0 || generated.model.length > 100) return this.fail(task.id, task.codeReviewId, 'CODE_REVIEW_RESULT_INVALID');
     await this.finish(task.id, task.codeReviewId, task.projectId, { ...generated, result: parsed.data });
   }
   private claim(taskId: string, reviewId: string, projectId: string): Promise<boolean> {
