@@ -1,10 +1,10 @@
 import type { CodeReviewResult } from '@hirescope/shared-types';
+import type { CodeReviewAnalysisInput } from './code-review-generator';
 
-interface AnalysisInput { techStack: unknown; coreModules: unknown; statistics: unknown }
 export const DETERMINISTIC_CODE_REVIEW_MODEL = 'deterministic-code-review-v1';
 
 export class DeterministicCodeReviewService {
-  review(analysis: AnalysisInput): { summary: string; score: number; model: string; result: CodeReviewResult } {
+  review(analysis: CodeReviewAnalysisInput): { summary: string; score: number; model: string; result: CodeReviewResult } {
     const techStack = Array.isArray(analysis.techStack) ? analysis.techStack : [];
     const coreModules = Array.isArray(analysis.coreModules) ? analysis.coreModules : [];
     const stats = isRecord(analysis.statistics) ? analysis.statistics : {};
