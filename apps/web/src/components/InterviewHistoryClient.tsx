@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Clock3, FileQuestion, Loader2, MessageSquareText, Plus, RefreshCw } from "lucide-react";
+import { AlertCircle, Clock3, FileText, Loader2, MessageSquareText, Minus, Plus, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -34,6 +34,7 @@ export function InterviewHistoryClient({ projectId }: InterviewHistoryClientProp
   );
   const generatingInterviewId = generatingInterview?.id;
   const canCreate = project?.status === "COMPLETED" && !generatingInterview && !isCreating;
+  const isRefreshNeeded = Boolean(generatingInterview);
 
   useEffect(() => {
     let active = true;
@@ -135,16 +136,21 @@ export function InterviewHistoryClient({ projectId }: InterviewHistoryClientProp
   }
 
   return (
-    <section className="app-page">
-      <div className="page-heading">
+    <section className="app-page interview-history-page">
+      <div className="page-heading interview-page-heading">
         <div>
-          <span>模拟面试</span>
-          <h1>{project?.name ?? "项目模拟面试"}</h1>
+          <nav className="interview-breadcrumb" aria-label="面包屑">
+            <Link href="/app/projects">项目</Link><span>/</span>
+            <Link href={`/app/projects/${projectId}`}>{project?.name ?? "当前项目"}</Link><span>/</span>
+            <strong>模拟面试</strong>
+          </nav>
+          {project?.status === "COMPLETED" ? <span className="interview-analysis-status">项目分析已完成</span> : null}
+          <h1>模拟面试</h1>
           <p>根据项目分析生成确定性面试题，完成作答后生成能力报告。</p>
         </div>
-        <button className="ghost-action" type="button" onClick={() => void refresh()}>
-          <RefreshCw aria-hidden="true" />刷新
-        </button>
+        {isRefreshNeeded ? <button className="ghost-action" type="button" onClick={() => void refresh()}>
+            <RefreshCw aria-hidden="true" />刷新进度
+          </button> : null}
       </div>
 
       {error ? <p className="app-banner error" role="alert">{error}</p> : null}
@@ -166,7 +172,11 @@ export function InterviewHistoryClient({ projectId }: InterviewHistoryClientProp
           </select>
         </label>
         <label>题目数量
-          <input type="number" min="5" max="15" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} />
+          <span className="question-stepper" role="group" aria-label="题目数量">
+            <button type="button" aria-label="减少题目数量" disabled={questionCount <= 5} onClick={() => setQuestionCount((count) => Math.max(5, count - 1))}><Minus aria-hidden="true" /></button>
+            <output aria-live="polite">{questionCount}</output>
+            <button type="button" aria-label="增加题目数量" disabled={questionCount >= 15} onClick={() => setQuestionCount((count) => Math.min(15, count + 1))}><Plus aria-hidden="true" /></button>
+          </span>
         </label>
         <button className="primary-button compact" type="button" disabled={!canCreate || questionCount < 5 || questionCount > 15} onClick={() => void handleCreate()}>
           {isCreating ? <Loader2 aria-hidden="true" /> : <Plus aria-hidden="true" />}创建面试
@@ -176,15 +186,20 @@ export function InterviewHistoryClient({ projectId }: InterviewHistoryClientProp
       <div className="interview-history-panel">
         <div className="panel-title"><h2>面试历史</h2><span>{interviews.length} 条</span></div>
         {interviews.length === 0 ? (
-          <div className="empty-inline"><FileQuestion aria-hidden="true" /><span>暂无模拟面试记录</span></div>
+          <div className="interview-empty-state">
+            <div className="interview-empty-illustration" aria-hidden="true">
+              <FileText />
+              <span><MessageSquareText /></span>
+            </div>
+            <h2>暂无模拟面试记录</h2>
+            <p>创建后可继续答题并生成能力报告。</p>
+          </div>
         ) : (
           <div className="interview-history-list">
             {interviews.map((interview) => <InterviewHistoryItem key={interview.id} interview={interview} />)}
           </div>
         )}
       </div>
-
-      <Link className="muted-link review-back-link" href={`/app/projects/${projectId}`}>返回项目详情</Link>
     </section>
   );
 }

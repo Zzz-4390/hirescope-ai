@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Clock3, FileText, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, Clock3, FileText, Loader2, MinusCircle, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -206,11 +206,13 @@ export function InterviewReportClient({ interviewId }: InterviewReportClientProp
   const failure = interview.failure ?? task?.failure;
 
   return (
-    <section className="app-page interview-report-page">
-      <div className="page-heading">
-        <div><span>面试报告</span><h1>{interview.title}</h1><p>基于全部面试回答生成确定性能力评估。</p></div>
-        <InterviewStatusBadge status={interview.status} />
-      </div>
+    <section className={`app-page interview-report-page${report ? " has-report" : ""}`}>
+      {!report ? (
+        <div className="page-heading">
+          <div><span>面试报告</span><h1>{interview.title}</h1><p>基于全部面试回答生成确定性能力评估。</p></div>
+          <InterviewStatusBadge status={interview.status} />
+        </div>
+      ) : null}
       {error ? <p className="app-banner error" role="alert">{error}</p> : null}
       {notice ? <p className="app-banner info" role="status">{notice}</p> : null}
 
@@ -221,7 +223,7 @@ export function InterviewReportClient({ interviewId }: InterviewReportClientProp
         <div className="report-generating-panel"><Loader2 aria-hidden="true" /><div><h2>报告生成中</h2><p>{task ? `${taskStatusText(task.status)}${typeof task.progress === "number" ? ` · ${task.progress}%` : ""}` : "正在恢复报告任务状态"}</p>{failure ? <small>{failure.message || failure.code}</small> : null}</div></div>
       ) : null}
       {interview.status === "FAILED" ? <FailurePanel message={failure?.message || failure?.code || "报告生成失败"} /> : null}
-      {report ? <ReportView report={report} /> : null}
+      {report ? <ReportView interview={interview} report={report} /> : null}
       {interview.status === "READY" || interview.status === "IN_PROGRESS" || interview.status === "GENERATING" ? (
         <div className="interview-ready-panel"><Clock3 aria-hidden="true" /><h2>面试尚未提交</h2><p>完成全部题目并提交后才能生成报告。</p><Link className="primary-button compact" href={`/app/interviews/${interviewId}`}>返回面试</Link></div>
       ) : null}
@@ -229,29 +231,101 @@ export function InterviewReportClient({ interviewId }: InterviewReportClientProp
   );
 }
 
-function ReportView({ report }: { report: InterviewReport }) {
+function ReportView({ interview, report }: { interview: InterviewDetail; report: InterviewReport }) {
   const dimensions = [
     ["项目理解", report.dimensions.projectUnderstanding],
     ["技术准确性", report.dimensions.technicalAccuracy],
     ["沟通表达", report.dimensions.communication],
     ["问题解决", report.dimensions.problemSolving],
   ] as const;
+  const performance = scorePresentation(report.overallScore);
+  const PerformanceIcon = performance.Icon;
 
   return (
     <div className="interview-report-content">
-      <div className="report-overview-panel">
+      <ReportTitle interview={interview} />
+      <QuestionReviewAccordion interview={interview} report={report} />
+      <h2 className="report-dimensions-heading">能力维度</h2>
+      <div className={`report-overview-panel score-${performance.tone}`}>
         <div><span>综合得分</span><strong>{report.overallScore}<small>/100</small></strong><CheckCircle2 aria-hidden="true" /></div>
-        <p>{report.summary}</p>
+        <div className="report-summary-meta">
+          <span className="report-status"><FileText aria-hidden="true" />报告已完成</span>
+          <span className={`report-performance ${performance.tone}`}><PerformanceIcon aria-hidden="true" /><span>面试表现</span><strong>{performance.label}</strong></span>
+        </div>
+        {report.summary.trim() ? <div className="report-ai-summary"><span>AI 总结</span><p>{report.summary}</p></div> : null}
       </div>
       <div className="report-dimension-grid">{dimensions.map(([label, score]) => <article key={label}><span>{label}</span><strong>{score}<small>/100</small></strong><i><b style={{ width: `${score}%` }} /></i></article>)}</div>
       <div className="report-list-grid"><ReportList title="优势" items={report.strengths} tone="success" /><ReportList title="改进建议" items={report.improvements} tone="warning" /></div>
-      <div className="question-review-panel"><div className="panel-title"><h2>逐题评价</h2><span>{report.questionReviews.length} 题</span></div>{report.questionReviews.map((review) => <article key={review.questionId}><div><strong>第 {review.sequence} 题</strong><span>{review.score}<small>/100</small></span></div><p>{review.comment}</p><small>参考要点覆盖 {review.matchedReferencePoints}/{review.totalReferencePoints}</small></article>)}</div>
     </div>
   );
 }
 
 function ReportList({ title, items, tone }: { title: string; items: string[]; tone: "success" | "warning" }) {
   return <article className={`detail-panel report-list ${tone}`}><h2>{title}</h2><ul>{items.map((item) => <li key={item}>{item}</li>)}</ul></article>;
+}
+
+function ReportTitle({ interview }: { interview: InterviewDetail }) {
+  return (
+    <header className="report-title-panel">
+      <div><span>模拟面试报告</span><h1>{interview.title}</h1></div>
+      <dl className="report-title-meta">
+        <div><dt>难度</dt><dd>{difficultyText(interview.difficulty)}</dd></div>
+        <div><dt>题目数量</dt><dd>{interview.questionCount} 题</dd></div>
+        <div><dt>完成状态</dt><dd>报告已完成</dd></div>
+      </dl>
+    </header>
+  );
+}
+
+function QuestionReviewAccordion({ interview, report }: { interview: InterviewDetail; report: InterviewReport }) {
+  if (!report.questionReviews.length) return null;
+
+  return (
+    <section className="question-review-accordion" aria-labelledby="question-reviews-title">
+      <div className="panel-title"><h2 id="question-reviews-title">逐题评价</h2><span>{report.questionReviews.length} 题</span></div>
+      <div className="question-review-list">
+        {report.questionReviews.map((review) => {
+          const question = interview.questions?.find((item) => item.id === review.questionId);
+          const questionText = question?.question.trim();
+          const answerText = question?.answer?.content.trim();
+          const comment = review.comment.trim();
+
+          return (
+            <details key={review.questionId}>
+              <summary>
+                <span className="question-sequence">第 {review.sequence} 题</span>
+                {comment ? <span className="question-comment">简评：{review.comment}</span> : null}
+                <span className="question-coverage">覆盖 {review.matchedReferencePoints}/{review.totalReferencePoints}</span>
+                <strong>{review.score}<small>/100</small></strong>
+                <ChevronDown aria-label="展开评价" />
+              </summary>
+              {questionText || answerText || comment ? (
+                <div className="question-review-detail">
+                  {questionText ? <ReviewDetailBlock title="题目" content={questionText} /> : null}
+                  {answerText ? <ReviewDetailBlock title="用户回答" content={answerText} /> : null}
+                  {comment ? <ReviewDetailBlock title="AI 评价" content={review.comment} /> : null}
+                </div>
+              ) : null}
+            </details>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ReviewDetailBlock({ title, content }: { title: string; content: string }) {
+  return <section><h3>{title}</h3><p>{content}</p></section>;
+}
+
+function scorePresentation(score: number) {
+  if (score < 60) return { label: "待提升", tone: "low", Icon: AlertCircle } as const;
+  if (score < 80) return { label: "表现良好", tone: "medium", Icon: MinusCircle } as const;
+  return { label: "表现优秀", tone: "high", Icon: CheckCircle2 } as const;
+}
+
+function difficultyText(difficulty: InterviewDetail["difficulty"]) {
+  return { EASY: "简单", MEDIUM: "中等", HARD: "困难" }[difficulty];
 }
 
 function FailurePanel({ message }: { message: string }) {
