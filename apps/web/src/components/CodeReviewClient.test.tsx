@@ -15,6 +15,9 @@ const reviewApi = vi.hoisted(() => ({
   getCodeReview: vi.fn(),
   listCodeReviews: vi.fn(),
 }));
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 
 vi.mock("../lib/projects", async () => {
   const actual = await vi.importActual<typeof import("../lib/projects")>("../lib/projects");
@@ -78,25 +81,27 @@ describe("CodeReviewClient", () => {
     reviewApi.createCodeReview.mockReset();
     reviewApi.getCodeReview.mockReset();
     reviewApi.listCodeReviews.mockReset();
+    navigation.push.mockReset();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("展示完整的代码审查结果", async () => {
+  it("不再直接展示结果，并使用真实审查 ID 跳转详情页", async () => {
+    const user = userEvent.setup();
     reviewApi.listCodeReviews.mockResolvedValue(listResponse([completedReview]));
     reviewApi.getCodeReview.mockResolvedValue(completedReview);
 
     render(<CodeReviewClient projectId="project-1" />);
 
-    expect(await screen.findByText("项目分层合理，关键边界清楚。")).toBeInTheDocument();
-    expect(screen.getByText("模块职责明确")).toBeInTheDocument();
-    expect(screen.getByText("缺少速率限制")).toBeInTheDocument();
-    expect(screen.getByText("补充边界测试")).toBeInTheDocument();
-    expect(screen.getByText("可维护性")).toBeInTheDocument();
-    expect(screen.getByText("安全性")).toBeInTheDocument();
-    expect(screen.getByText("性能")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "查看审查结果" })).toHaveAttribute("href", "/app/code-reviews/review-1?projectId=project-1");
+    expect(screen.queryByText("项目分层合理，关键边界清楚。")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /代码审查/ }));
+    expect(navigation.push).toHaveBeenCalledWith("/app/code-reviews/review-1?projectId=project-1");
+    expect(screen.getAllByText("可维护性").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("安全性").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("性能").length).toBeGreaterThan(0);
   });
 
   it("空状态下可以创建第一份代码审查", async () => {
@@ -117,9 +122,9 @@ describe("CodeReviewClient", () => {
     reviewApi.getCodeReview.mockResolvedValue(created);
 
     render(<CodeReviewClient projectId="project-1" />);
-    expect(await screen.findByText("还没有代码审查结果")).toBeInTheDocument();
+    expect(await screen.findByText("还没有生成过代码审查")).toBeInTheDocument();
 
-    await user.click(screen.getAllByRole("button", { name: "生成代码审查" })[0]);
+    await user.click(screen.getByRole("button", { name: "开始代码审查" }));
 
     expect(reviewApi.createCodeReview).toHaveBeenCalledWith("project-1");
     expect(await screen.findByText("代码审查已创建，正在生成结果。")).toBeInTheDocument();
@@ -150,13 +155,32 @@ describe("CodeReviewClient", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(screen.getByText("代码审查正在生成，页面会自动刷新结果。")).toBeInTheDocument();
+    expect(screen.getByText("代码审查进行中")).toBeInTheDocument();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2500);
     });
 
     expect(projectApi.getTask).toHaveBeenCalledWith("task-1");
-    expect(screen.getByText("项目分层合理，关键边界清楚。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看审查结果" })).toHaveAttribute("href", "/app/code-reviews/review-1?projectId=project-1");
+  });
+
+  it("任务完成但没有有效结果时不显示零分或完成进度", async () => {
+    const emptyReview: CodeReviewDetail = {
+      ...completedReview,
+      score: null,
+      summary: null,
+      result: null,
+      task: { ...runningTask, status: "SUCCEEDED", progress: 100 },
+    };
+    reviewApi.listCodeReviews.mockResolvedValue(listResponse([emptyReview]));
+    reviewApi.getCodeReview.mockResolvedValue(emptyReview);
+
+    render(<CodeReviewClient projectId="project-1" />);
+
+    expect(await screen.findAllByText("无法生成有效评分")).not.toHaveLength(0);
+    expect(screen.queryByRole("link", { name: "查看审查结果" })).not.toBeInTheDocument();
+    expect(screen.queryByText("0/100")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 });

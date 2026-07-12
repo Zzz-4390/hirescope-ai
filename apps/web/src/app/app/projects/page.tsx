@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { ProjectListClient } from "../../../components/ProjectListClient";
 
 export default function ProjectsIndexPage() {
-  redirect("/app");
+  return <ProjectListClient />;
 }
