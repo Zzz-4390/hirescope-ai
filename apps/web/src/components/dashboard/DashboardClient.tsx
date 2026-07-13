@@ -30,7 +30,6 @@ export function DashboardClient() {
   const user = useAppUser();
   const { selectedProjectId } = useAppProject();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<ProjectDetailState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -43,7 +42,6 @@ export function DashboardClient() {
     try {
       const response = await listProjects(1, 20);
       setProjects(response.items);
-      setSelectedId((current) => current || response.items[0]?.id || "");
     } catch (cause) {
       setProjectListError(cause instanceof Error ? cause.message : "项目列表加载失败");
     } finally {
@@ -57,7 +55,6 @@ export function DashboardClient() {
       .then((response) => {
         if (!active) return;
         setProjects(response.items);
-        setSelectedId((current) => current || response.items[0]?.id || "");
       })
       .catch((cause) => {
         if (active) setProjectListError(cause instanceof Error ? cause.message : "项目列表加载失败");
@@ -66,9 +63,9 @@ export function DashboardClient() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) setSelectedId(selectedProjectId);
-  }, [projects, selectedProjectId]);
+  const selectedId = projects.some((project) => project.id === selectedProjectId)
+    ? selectedProjectId
+    : projects[0]?.id ?? "";
 
   const loadProjectDetail = useCallback(async (projectId: string, active: () => boolean) => {
     const [project, reviews, interviews] = await Promise.all([getProject(projectId), listCodeReviews(projectId, 1, 1), listInterviews(projectId, 1, 1)]);
