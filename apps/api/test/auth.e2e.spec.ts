@@ -12,6 +12,7 @@ describe('Auth API', () => {
   const prisma = new PrismaClient();
   const redis = new Redis(process.env.TEST_REDIS_URL!);
   const email = 'auth-e2e@example.com';
+  const username = 'auth_e2e_user';
   const password = 'StrongPassword123!';
   const origin = 'https://localhost:3000';
 
@@ -30,6 +31,8 @@ describe('Auth API', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({ where: { email: { endsWith: '@example.com' } } });
+    const registerRateLimitKeys = await redis.keys('auth:rate:register:*');
+    if (registerRateLimitKeys.length) await redis.del(...registerRateLimitKeys);
     await prisma.$disconnect();
     await redis.quit();
     if (app) await app.close();
@@ -38,30 +41,42 @@ describe('Auth API', () => {
   it('validates DTOs before accepting registration', async () => {
     const existingKeys = await redis.keys('auth:rate:register:*');
     if (existingKeys.length) await redis.del(...existingKeys);
-    const response = await request(app.getHttpServer()).post('/api/v1/auth/register').send({ email: 'bad', password: 'short' });
+    const response = await request(app.getHttpServer()).post('/api/v1/auth/register').send({
+      username: 'bad-name', email: 'bad', password: 'short', confirmPassword: 'different',
+    });
     expect(response.status).toBe(422);
     expect(response.body.error.code).toBe('VALIDATION_FAILED');
     expect(await redis.keys('auth:rate:register:*')).toHaveLength(0);
   });
 
-  it('registers without exposing whether the email already exists', async () => {
-    const first = await request(app.getHttpServer()).post('/api/v1/auth/register').send({ email: ` ${email.toUpperCase()} `, password, displayName: ' User ' });
-    const second = await request(app.getHttpServer()).post('/api/v1/auth/register').send({ email, password });
+  it('registers without exposing whether the username or email already exists', async () => {
+    const first = await request(app.getHttpServer()).post('/api/v1/auth/register').send({
+      username: ` ${username.toUpperCase()} `, email: ` ${email.toUpperCase()} `, password, confirmPassword: password,
+    });
+    const duplicateEmail = await request(app.getHttpServer()).post('/api/v1/auth/register').send({
+      username: 'another_auth_user', email, password, confirmPassword: password,
+    });
+    const duplicateUsername = await request(app.getHttpServer()).post('/api/v1/auth/register').send({
+      username, email: 'another-auth-e2e@example.com', password, confirmPassword: password,
+    });
     expect(first.status).toBe(202);
-    expect(second.status).toBe(202);
-    expect(second.body).toEqual(first.body);
+    expect(duplicateEmail.status).toBe(202);
+    expect(duplicateUsername.status).toBe(202);
+    expect(duplicateEmail.body).toEqual(first.body);
+    expect(duplicateUsername.body).toEqual(first.body);
   });
 
-  it('returns identical errors for a wrong password and an unknown email', async () => {
-    const wrong = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email, password: 'WrongPassword123!' });
-    const missing = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email: 'missing@example.com', password: 'WrongPassword123!' });
+  it('returns identical errors for a wrong password and an unknown identifier', async () => {
+    const wrong = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: username, password: 'WrongPassword123!' });
+    const missing = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: 'missing_user', password: 'WrongPassword123!' });
     expect(wrong.status).toBe(401);
     expect(missing.status).toBe(401);
     expect({ ...wrong.body.error, requestId: undefined }).toEqual({ ...missing.body.error, requestId: undefined });
+    expect(wrong.body.error.message).toBe('用户名、邮箱或密码错误');
   });
 
-  it('logs in, sets a secure cookie, and returns the current user', async () => {
-    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email, password });
+  it('logs in by username and email, sets a secure cookie, and returns the current user', async () => {
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: username, password });
     expect(login.status).toBe(200);
     expect(login.body.expiresIn).toBe(900);
     expect(setCookie(login)).toContain('__Secure-hirescope_refresh=');
@@ -70,12 +85,15 @@ describe('Auth API', () => {
     expect(setCookie(login)).toContain('SameSite=Lax');
     const me = await request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${login.body.accessToken}`);
     expect(me.status).toBe(200);
-    expect(me.body).toMatchObject({ email, displayName: 'User' });
+    expect(me.body).toMatchObject({ username, email, displayName: null });
     expect(me.body.passwordHash).toBeUndefined();
+    const emailLogin = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email.toUpperCase(), password });
+    expect(emailLogin.status).toBe(200);
+    expect(emailLogin.body.user).toMatchObject({ username, email });
   });
 
   it('rotates refresh tokens once and leaves the new session valid after stale reuse', async () => {
-    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email, password });
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
     const oldCookie = setCookie(login).split(';')[0]!;
     const rotated = await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', origin).set('Cookie', oldCookie);
     expect(rotated.status).toBe(200);
@@ -88,7 +106,7 @@ describe('Auth API', () => {
   });
 
   it('allows only one concurrent refresh', async () => {
-    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email, password });
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
     const cookie = setCookie(login).split(';')[0]!;
     const responses = await Promise.all([
       request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', origin).set('Cookie', cookie),
@@ -102,7 +120,7 @@ describe('Auth API', () => {
   });
 
   it('requires a trusted Origin or Referer for refresh and logout', async () => {
-    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email, password });
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
     const cookie = setCookie(login).split(';')[0]!;
     expect((await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', cookie)).status).toBe(403);
     expect((await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', 'https://localhost:3000.evil.test').set('Cookie', cookie)).status).toBe(403);

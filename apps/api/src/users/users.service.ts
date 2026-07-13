@@ -5,18 +5,20 @@ import { PrismaService } from '../database/prisma.service';
 export class UsersService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  findByEmail(email: string) {
-    return this.prisma.user.findUnique({ where: { email } });
+  findByIdentifier(identifier: string) {
+    return identifier.includes('@')
+      ? this.prisma.user.findUnique({ where: { email: identifier } })
+      : this.prisma.user.findUnique({ where: { username: identifier } });
   }
 
   findPublicById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, displayName: true, createdAt: true },
+      select: { id: true, username: true, email: true, displayName: true, createdAt: true },
     });
   }
 
-  create(email: string, passwordHash: string, displayName?: string) {
-    return this.prisma.user.create({ data: { email, passwordHash, displayName } });
+  create(username: string, email: string, passwordHash: string) {
+    return this.prisma.user.create({ data: { username, email, passwordHash } });
   }
 }

@@ -9,6 +9,7 @@ export { clearAccessToken, getAccessToken, saveAccessToken };
 
 export interface CurrentUser {
   id: string;
+  username: string;
   email: string;
   displayName?: string | null;
 }
@@ -20,9 +21,10 @@ interface LoginResponse {
 }
 
 interface RegisterInput {
+  username: string;
   email: string;
   password: string;
-  displayName?: string;
+  confirmPassword: string;
 }
 
 interface ErrorEnvelope {
@@ -32,10 +34,10 @@ interface ErrorEnvelope {
   message?: string;
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export async function login(identifier: string, password: string): Promise<LoginResponse> {
   const payload = await authRequest<LoginResponse>("/api/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, password }),
   });
 
   if (!payload.accessToken) {

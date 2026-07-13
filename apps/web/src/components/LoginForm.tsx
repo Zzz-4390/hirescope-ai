@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
@@ -9,10 +9,10 @@ import { login, saveAccessToken } from "../lib/auth";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState(() => getRememberedEmail());
+  const [identifier, setIdentifier] = useState(() => getRememberedIdentifier());
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberAccount, setRememberAccount] = useState(() => Boolean(getRememberedEmail()));
+  const [rememberAccount, setRememberAccount] = useState(() => Boolean(getRememberedIdentifier()));
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
   const [error, setError] = useState("");
 
@@ -21,11 +21,16 @@ export function LoginForm() {
     setError("");
     setStatus("loading");
     try {
-      const trimmedEmail = email.trim();
-      const result = await login(trimmedEmail, password);
+      const normalizedIdentifier = identifier.trim().toLowerCase();
+      const result = await login(normalizedIdentifier, password);
       saveAccessToken(result.accessToken);
-      if (rememberAccount) localStorage.setItem("hirescope.rememberedEmail", trimmedEmail);
-      else localStorage.removeItem("hirescope.rememberedEmail");
+      if (rememberAccount) {
+        localStorage.setItem("hirescope.rememberedIdentifier", normalizedIdentifier);
+        localStorage.removeItem("hirescope.rememberedEmail");
+      } else {
+        localStorage.removeItem("hirescope.rememberedIdentifier");
+        localStorage.removeItem("hirescope.rememberedEmail");
+      }
       setStatus("success");
       router.push("/app");
     } catch (cause) {
@@ -38,15 +43,15 @@ export function LoginForm() {
     <form className="login-form" onSubmit={handleSubmit}>
       <h2>登录码途 AI</h2>
       <label className="field">
-        <span className="sr-only">电子邮箱</span>
-        <Mail aria-hidden="true" />
+        <span className="sr-only">用户名或邮箱</span>
+        <UserRound aria-hidden="true" />
         <input
-          type="email"
-          autoComplete="email"
-          placeholder="电子邮箱"
-          aria-label="电子邮箱"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          type="text"
+          autoComplete="username"
+          placeholder="用户名或邮箱"
+          aria-label="用户名或邮箱"
+          value={identifier}
+          onChange={(event) => setIdentifier(event.target.value)}
           required
         />
       </label>
@@ -100,7 +105,9 @@ export function LoginForm() {
   );
 }
 
-function getRememberedEmail(): string {
+function getRememberedIdentifier(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem("hirescope.rememberedEmail") ?? "";
+  return localStorage.getItem("hirescope.rememberedIdentifier")
+    ?? localStorage.getItem("hirescope.rememberedEmail")
+    ?? "";
 }

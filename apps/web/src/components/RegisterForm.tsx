@@ -9,23 +9,31 @@ import { register } from "../lib/auth";
 
 export function RegisterForm() {
   const router = useRouter();
-  const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
   const [error, setError] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    if (password !== confirmPassword) {
+      setError("两次输入的密码不一致");
+      return;
+    }
     setStatus("loading");
     try {
+      const normalizedUsername = username.trim().toLowerCase();
       await register({
-        displayName: displayName.trim() || undefined,
-        email: email.trim(),
+        username: normalizedUsername,
+        email: email.trim().toLowerCase(),
         password,
+        confirmPassword,
       });
-      localStorage.setItem("hirescope.rememberedEmail", email.trim());
+      localStorage.setItem("hirescope.rememberedIdentifier", normalizedUsername);
+      localStorage.removeItem("hirescope.rememberedEmail");
       setStatus("success");
       router.push("/login");
     } catch (cause) {
@@ -38,15 +46,18 @@ export function RegisterForm() {
     <form className="login-form" onSubmit={handleSubmit}>
       <h2>创建码途 AI 账户</h2>
       <label className="field">
-        <span className="sr-only">显示名称</span>
+        <span className="sr-only">用户名</span>
         <UserRound aria-hidden="true" />
         <input
           type="text"
-          autoComplete="name"
-          placeholder="显示名称（可选）"
-          aria-label="显示名称"
-          value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
+          autoComplete="username"
+          placeholder="用户名（3–30 位字母、数字或下划线）"
+          aria-label="用户名"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          required
+          minLength={3}
+          maxLength={30}
         />
       </label>
       <label className="field">
@@ -72,6 +83,20 @@ export function RegisterForm() {
           aria-label="密码"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          required
+          minLength={6}
+        />
+      </label>
+      <label className="field">
+        <span className="sr-only">确认密码</span>
+        <LockKeyhole aria-hidden="true" />
+        <input
+          type="password"
+          autoComplete="new-password"
+          placeholder="确认密码"
+          aria-label="确认密码"
+          value={confirmPassword}
+          onChange={(event) => setConfirmPassword(event.target.value)}
           required
           minLength={6}
         />

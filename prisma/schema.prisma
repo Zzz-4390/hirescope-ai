@@ -52,6 +52,7 @@ enum InterviewDifficulty {
 
 model User {
   id               String            @id @default(uuid()) @db.Uuid
+  username         String            @unique @db.VarChar(30)
   email            String            @unique @db.VarChar(320)
   passwordHash     String            @map("password_hash") @db.VarChar(255)
   displayName      String?           @map("display_name") @db.VarChar(100)

@@ -13,9 +13,9 @@ describe('CodeReview API', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(TASK_QUEUE).useValue({ add: async () => undefined }).compile();
     app = moduleRef.createNestApplication(); configureApplication(app); await app.init();
-    for (const email of ['reviews-e2e@example.com', 'reviews-other@example.com']) await request(app.getHttpServer()).post('/api/v1/auth/register').send({ email, password: 'StrongPassword123!' });
-    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email: 'reviews-e2e@example.com', password: 'StrongPassword123!' }); token = login.body.accessToken;
-    const other = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email: 'reviews-other@example.com', password: 'StrongPassword123!' }); otherToken = other.body.accessToken;
+    for (const [username, email] of [['reviews_e2e', 'reviews-e2e@example.com'], ['reviews_other', 'reviews-other@example.com']]) await request(app.getHttpServer()).post('/api/v1/auth/register').send({ username, email, password: 'StrongPassword123!', confirmPassword: 'StrongPassword123!' });
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: 'reviews-e2e@example.com', password: 'StrongPassword123!' }); token = login.body.accessToken;
+    const other = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: 'reviews-other@example.com', password: 'StrongPassword123!' }); otherToken = other.body.accessToken;
     userId = (await prisma.user.findUniqueOrThrow({ where: { email: 'reviews-e2e@example.com' } })).id; otherUserId = (await prisma.user.findUniqueOrThrow({ where: { email: 'reviews-other@example.com' } })).id;
     pendingProjectId = (await createProject(userId, ProjectStatus.ANALYZING, 'Pending')).id; completedProjectId = (await createProject(userId, ProjectStatus.COMPLETED, 'Completed')).id;
   });

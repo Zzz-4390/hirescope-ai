@@ -1,24 +1,30 @@
 "use client";
 
 import {
-  ArrowLeft,
+  AlertCircle,
+  ChevronDown,
   CloudUpload,
   CodeXml,
+  FileArchive,
   FileCheck2,
   FileText,
+  LoaderCircle,
   LockKeyhole,
   MessageSquareText,
   Plus,
   ShieldCheck,
-  Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type DragEvent, type FormEvent, type KeyboardEvent, useRef, useState } from "react";
 
 import { uploadProject } from "../../../../lib/projects";
 import styles from "./NewProjectPage.module.css";
+
+const MAX_PROJECT_NAME_LENGTH = 100;
+const MAX_ZIP_SIZE = 50 * 1024 * 1024;
 
 const uploadSteps = [
   { title: "上传项目", description: "提交 ZIP 文件，开始项目分析", icon: CloudUpload },
@@ -28,8 +34,20 @@ const uploadSteps = [
   { title: "能力报告", description: "生成综合评估报告，助力你管理与成长", icon: FileText },
 ] as const;
 
+function validateZipFile(file: File): string {
+  if (!file.name.toLowerCase().endsWith(".zip")) return "只能上传 .zip 文件";
+  if (file.size > MAX_ZIP_SIZE) return "ZIP 文件不能超过 50MB";
+  return "";
+}
+
+function formatFileSize(size: number): string {
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / 1024 / 1024).toFixed(2)} MB`;
+}
+
 export default function NewProjectPage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
@@ -38,19 +56,42 @@ export default function NewProjectPage() {
   const [status, setStatus] = useState<"idle" | "uploading">("idle");
   const [error, setError] = useState("");
   const showDescription = isDescriptionExpanded || description.length > 0;
+  const fileError = file ? validateZipFile(file) : "";
+  const canSubmit = name.trim().length > 0 && Boolean(file) && !fileError && status === "idle";
+
+  function openFilePicker() {
+    if (status === "idle") fileInputRef.current?.click();
+  }
+
+  function selectFile(nextFile: File | null) {
+    setFile(nextFile);
+    setError(nextFile ? validateZipFile(nextFile) : "");
+  }
+
+  function removeFile() {
+    setFile(null);
+    setError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    if (status !== "idle") return;
+    selectFile(event.dataTransfer.files[0] ?? null);
+  }
+
+  function handleDropZoneKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openFilePicker();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
-    if (!file) {
-      setError("请选择 ZIP 项目文件");
-      return;
-    }
-    if (!file.name.toLowerCase().endsWith(".zip")) {
-      setError("只能上传 .zip 文件");
-      return;
-    }
+    if (!canSubmit || !file) return;
 
+    setError("");
     setStatus("uploading");
     try {
       const response = await uploadProject({
@@ -69,69 +110,138 @@ export default function NewProjectPage() {
   return (
     <section className={styles.page}>
       <header className={styles.heading}>
-        <span>项目上传</span>
+        <nav className={styles.breadcrumb} aria-label="面包屑">
+          <Link href="/app/projects">项目</Link>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">上传项目</span>
+        </nav>
         <h1>上传 ZIP 项目</h1>
         <p>上传 ZIP 项目，AI 将自动分析代码结构与业务逻辑，生成专业的分析结果。</p>
       </header>
 
       <div className={styles.layout}>
-        <form className={styles.formCard} onSubmit={handleSubmit}>
-          <label className={styles.filledField}>
-            <span>项目名称</span>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="例如：个人博客系统"
-              maxLength={120}
-              required
-            />
-          </label>
+        <form className={styles.formCard} onSubmit={handleSubmit} noValidate>
+          <div className={styles.fieldGroup}>
+            <label className={styles.fieldLabel} htmlFor="project-name">
+              项目名称 <span aria-hidden="true">*</span>
+            </label>
+            <div className={styles.nameInputShell}>
+              <input
+                id="project-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="例如：个人博客系统"
+                maxLength={MAX_PROJECT_NAME_LENGTH}
+                disabled={status === "uploading"}
+                required
+              />
+              <small aria-live="polite">{name.length} / {MAX_PROJECT_NAME_LENGTH}</small>
+            </div>
+          </div>
 
           {showDescription ? (
-            <label className={`${styles.filledField} ${styles.descriptionField}`}>
-              <span>项目描述（可选）</span>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="说明项目背景或你希望重点分析的内容"
-                maxLength={5000}
-              />
-              <small>{description.length} / 5000</small>
-            </label>
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel} htmlFor="project-description">项目描述（可选）</label>
+              <div className={styles.descriptionField}>
+                <textarea
+                  id="project-description"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="说明项目背景或你希望重点分析的内容"
+                  maxLength={5000}
+                  disabled={status === "uploading"}
+                  autoFocus={isDescriptionExpanded && description.length === 0}
+                />
+                <small>{description.length} / 5000</small>
+              </div>
+            </div>
           ) : (
             <button
               className={styles.descriptionToggle}
               type="button"
+              disabled={status === "uploading"}
+              aria-expanded="false"
               onClick={() => setIsDescriptionExpanded(true)}
             >
-              <Plus aria-hidden="true" />
-              添加项目描述（可选）
+              <span><Plus aria-hidden="true" />添加项目描述（可选）</span>
+              <ChevronDown aria-hidden="true" />
             </button>
           )}
 
-          <label
-            className={`${styles.fileDrop} ${isDragging ? styles.dragging : ""} ${file ? styles.hasFile : ""}`}
-            onDragEnter={() => setIsDragging(true)}
-            onDragOver={() => setIsDragging(true)}
+          <div
+            className={`${styles.fileDrop} ${isDragging ? styles.dragging : ""} ${file ? styles.hasFile : ""} ${fileError ? styles.invalidFile : ""} ${status === "uploading" ? styles.uploading : ""}`}
+            role="button"
+            tabIndex={status === "uploading" ? -1 : 0}
+            aria-label={file ? "更换 ZIP 文件" : "选择 ZIP 文件"}
+            aria-disabled={status === "uploading"}
+            aria-busy={status === "uploading"}
+            onClick={openFilePicker}
+            onKeyDown={handleDropZoneKeyDown}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              if (status === "idle") setIsDragging(true);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              if (status === "idle") setIsDragging(true);
+            }}
             onDragLeave={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsDragging(false);
             }}
-            onDrop={() => setIsDragging(false)}
+            onDrop={handleDrop}
           >
-            <span className={styles.uploadIcon}><CloudUpload aria-hidden="true" /></span>
-            <strong>
-              {file ? file.name : <>拖拽 ZIP 文件到此处，或点击<span>选择文件</span></>}
-            </strong>
-            <small>
-              {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB · 点击或拖拽可重新选择` : "支持 .zip，最大大小以后端限制为准"}
-            </small>
-            <input
-              type="file"
-              accept=".zip,application/zip,application/x-zip-compressed"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              required
-            />
-          </label>
+            {status === "uploading" ? (
+              <>
+                <span className={styles.uploadIcon}><LoaderCircle aria-hidden="true" /></span>
+                <strong>正在上传并创建分析任务</strong>
+                <small>请保持页面开启，上传完成后将自动进入项目详情。</small>
+              </>
+            ) : file ? (
+              <>
+                <span className={styles.fileIcon}><FileArchive aria-hidden="true" /></span>
+                <div className={styles.fileSummary}>
+                  <strong>{file.name}</strong>
+                  <small>{formatFileSize(file.size)} · ZIP 压缩文件</small>
+                </div>
+                <div className={styles.fileActions}>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openFilePicker();
+                    }}
+                  >
+                    更换文件
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="移除已选文件"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeFile();
+                    }}
+                  >
+                    <X aria-hidden="true" />移除
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className={styles.uploadIcon}><CloudUpload aria-hidden="true" /></span>
+                <strong>拖拽 ZIP 文件到此处，或点击<span>选择文件</span></strong>
+                <small>支持 .zip，最大 50MB</small>
+              </>
+            )}
+          </div>
+          <input
+            ref={fileInputRef}
+            className={styles.fileInput}
+            type="file"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            disabled={status === "uploading"}
+            onClick={(event) => { event.currentTarget.value = ""; }}
+            onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+          />
 
           <ul className={styles.assurances} aria-label="上传说明">
             <li><ShieldCheck aria-hidden="true" />仅用于项目分析</li>
@@ -139,15 +249,21 @@ export default function NewProjectPage() {
             <li><Trash2 aria-hidden="true" />可随时删除</li>
           </ul>
 
-          {error ? <p className={styles.error} role="alert">{error}</p> : null}
+          {error ? (
+            <div className={styles.error} role="alert">
+              <AlertCircle aria-hidden="true" />
+              <span>{error}</span>
+              <button type="button" onClick={openFilePicker}>重新选择文件</button>
+            </div>
+          ) : null}
 
           <div className={styles.actions}>
-            <button className={styles.primaryAction} type="submit" disabled={status !== "idle"}>
-              <Sparkles aria-hidden="true" />
+            <button className={styles.primaryAction} type="submit" disabled={!canSubmit}>
+              {status === "uploading" ? <LoaderCircle aria-hidden="true" /> : null}
               {status === "uploading" ? "上传中..." : "上传并开始分析"}
             </button>
-            <Link className={styles.secondaryAction} href="/app/projects">
-              <ArrowLeft aria-hidden="true" />返回项目列表
+            <Link className={styles.secondaryAction} href="/app/projects" aria-disabled={status === "uploading"}>
+              返回项目列表
             </Link>
           </div>
         </form>
@@ -159,6 +275,7 @@ export default function NewProjectPage() {
               <ol className={styles.steps}>
                 {uploadSteps.map(({ title, description: stepDescription, icon: Icon }, index) => (
                   <li className={index === 0 ? styles.currentStep : ""} key={title}>
+                    <span className={styles.stepNumber}>{index + 1}</span>
                     <span className={styles.stepIcon}><Icon aria-hidden="true" /></span>
                     <div><strong>{title}</strong><p>{stepDescription}</p></div>
                   </li>

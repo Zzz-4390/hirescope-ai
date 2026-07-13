@@ -54,6 +54,12 @@ export const InterviewQuestionReviewSchema = z.object({
   sequence: z.number().int().positive(),
   score: InterviewReportScoreSchema,
   comment: z.string().min(1),
+  summary: z.string().min(1),
+  coveredPoints: z.array(z.string().min(1)),
+  missedPoints: z.array(z.string().min(1)),
+  strengths: z.array(z.string().min(1)),
+  improvements: z.array(z.string().min(1)),
+  improvedAnswerExample: z.string().min(1),
   matchedReferencePoints: z.number().int().nonnegative(),
   totalReferencePoints: z.number().int().nonnegative(),
 }).strict().refine((review) => review.matchedReferencePoints <= review.totalReferencePoints, { message: 'matchedReferencePoints cannot exceed totalReferencePoints' });

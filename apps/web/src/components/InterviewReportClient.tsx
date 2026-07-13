@@ -288,7 +288,7 @@ function QuestionReviewAccordion({ interview, report }: { interview: InterviewDe
           const question = interview.questions?.find((item) => item.id === review.questionId);
           const questionText = question?.question.trim();
           const answerText = question?.answer?.content.trim();
-          const comment = review.comment.trim();
+          const comment = (review.summary || review.comment).trim();
 
           return (
             <details key={review.questionId}>
@@ -303,7 +303,12 @@ function QuestionReviewAccordion({ interview, report }: { interview: InterviewDe
                 <div className="question-review-detail">
                   {questionText ? <ReviewDetailBlock title="题目" content={questionText} /> : null}
                   {answerText ? <ReviewDetailBlock title="用户回答" content={answerText} /> : null}
-                  {comment ? <ReviewDetailBlock title="AI 评价" content={review.comment} /> : null}
+                  {comment ? <ReviewDetailBlock title="AI 简评" content={comment} /> : null}
+                  <ReviewDetailList title="已覆盖要点" items={review.coveredPoints} />
+                  <ReviewDetailList title="遗漏要点" items={review.missedPoints} />
+                  <ReviewDetailList title="回答亮点" items={review.strengths} />
+                  <ReviewDetailList title="改进建议" items={review.improvements} />
+                  {review.improvedAnswerExample?.trim() ? <ReviewDetailBlock title="参考改进回答" content={review.improvedAnswerExample} /> : null}
                 </div>
               ) : null}
             </details>
@@ -316,6 +321,11 @@ function QuestionReviewAccordion({ interview, report }: { interview: InterviewDe
 
 function ReviewDetailBlock({ title, content }: { title: string; content: string }) {
   return <section><h3>{title}</h3><p>{content}</p></section>;
+}
+
+function ReviewDetailList({ title, items }: { title: string; items?: string[] }) {
+  if (!items?.length) return null;
+  return <section><h3>{title}</h3><ul>{items.map((item) => <li key={item}>{item}</li>)}</ul></section>;
 }
 
 function scorePresentation(score: number) {

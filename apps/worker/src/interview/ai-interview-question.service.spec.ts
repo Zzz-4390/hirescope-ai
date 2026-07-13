@@ -4,7 +4,7 @@ import { AiInterviewQuestionService } from './ai-interview-question.service';
 
 const CONTEXT = { userId: 'user', projectId: 'project', taskId: 'task' };
 const ANALYSIS = { summary: 'NestJS API', techStack: [{ name: 'TypeScript' }], coreModules: [{ name: 'Interviews' }], statistics: { totalFiles: 10 } };
-const QUESTIONS = { questions: Array.from({ length: 5 }, (_, index) => ({ sequence: index + 1, category: 'project', difficulty: 'MEDIUM', question: `Question ${index + 1}`, referencePoints: ['point'] })) };
+const QUESTIONS = { questions: Array.from({ length: 5 }, (_, index) => ({ sequence: index + 1, category: '项目经验', difficulty: 'MEDIUM', question: `请说明项目问题 ${index + 1}`, referencePoints: ['说明关键技术取舍'] })) };
 
 function setup(content: string) {
   const provider = {
@@ -52,5 +52,15 @@ describe('AiInterviewQuestionService', () => {
     const { service, provider } = setup(JSON.stringify(hardQuestions));
     await service.generate(ANALYSIS, null, 5, InterviewDifficulty.HARD, CONTEXT);
     expect(provider.completeJson.mock.calls[0]![0].systemPrompt).toContain('"difficulty":"HARD"');
+  });
+
+  it('requires Simplified Chinese in both the language rules and output example', async () => {
+    const { service, provider } = setup(JSON.stringify(QUESTIONS));
+    await service.generate(ANALYSIS, null, 5, InterviewDifficulty.MEDIUM, CONTEXT);
+    const prompt = provider.completeJson.mock.calls[0]![0].systemPrompt;
+    expect(prompt).toContain('所有 question、category、referencePoints');
+    expect(prompt).toContain('简体中文');
+    expect(prompt).toContain('"category":"系统设计"');
+    expect(prompt).not.toContain('"category":"architecture"');
   });
 });

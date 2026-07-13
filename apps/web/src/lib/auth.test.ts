@@ -16,7 +16,7 @@ describe("auth", () => {
     vi.restoreAllMocks();
   });
 
-  it("submits the existing email/password login contract", async () => {
+  it("submits the identifier/password login contract", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ accessToken: "token-123" }), {
         status: 200,
@@ -24,7 +24,7 @@ describe("auth", () => {
       }),
     );
 
-    const result = await login("candidate@example.com", "secret123");
+    const result = await login("candidate_01", "secret123");
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/auth/login",
@@ -32,7 +32,7 @@ describe("auth", () => {
         method: "POST",
         credentials: "include",
         body: JSON.stringify({
-          email: "candidate@example.com",
+          identifier: "candidate_01",
           password: "secret123",
         }),
       }),
@@ -42,13 +42,13 @@ describe("auth", () => {
 
   it("uses the backend error message when login fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ message: "邮箱或密码错误" }), {
+      new Response(JSON.stringify({ message: "用户名、邮箱或密码错误" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       }),
     );
 
-    await expect(login("candidate@example.com", "wrong")).rejects.toThrow("邮箱或密码错误");
+    await expect(login("candidate@example.com", "wrong")).rejects.toThrow("用户名、邮箱或密码错误");
   });
 
   it("returns a clear message when the API is unavailable", async () => {
@@ -76,9 +76,10 @@ describe("auth", () => {
     );
 
     await expect(register({
+      username: "new_user",
       email: "new@example.com",
       password: "secret123",
-      displayName: "New User",
+      confirmPassword: "secret123",
     })).resolves.toEqual({ accepted: true });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -87,9 +88,10 @@ describe("auth", () => {
         method: "POST",
         credentials: "include",
         body: JSON.stringify({
+          username: "new_user",
           email: "new@example.com",
           password: "secret123",
-          displayName: "New User",
+          confirmPassword: "secret123",
         }),
       }),
     );
@@ -97,7 +99,7 @@ describe("auth", () => {
 
   it("loads the current user from /auth/me", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ id: "user-1", email: "candidate@example.com" }), {
+      new Response(JSON.stringify({ id: "user-1", username: "candidate_01", email: "candidate@example.com" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -105,6 +107,7 @@ describe("auth", () => {
 
     await expect(getCurrentUser()).resolves.toEqual({
       id: "user-1",
+      username: "candidate_01",
       email: "candidate@example.com",
     });
   });

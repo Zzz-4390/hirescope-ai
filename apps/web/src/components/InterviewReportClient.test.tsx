@@ -26,6 +26,8 @@ describe("InterviewReportClient", () => {
     expect(await screen.findByText("综合得分")).toBeInTheDocument();
     expect(screen.getByText("项目理解")).toBeInTheDocument();
     expect(screen.getByText("回答覆盖主要参考要点。")).toBeInTheDocument();
+    expect(screen.getByText("已覆盖要点")).toBeInTheDocument();
+    expect(screen.getByText("参考改进回答")).toBeInTheDocument();
   });
 
   it("resumes an existing report task and loads its result", async () => {
@@ -55,7 +57,7 @@ function report() {
   return {
     id: "report-1", overallScore: 88, summary: "整体表现稳定。",
     dimensions: { projectUnderstanding: 90, technicalAccuracy: 88, communication: 84, problemSolving: 89 },
-    questionReviews: [{ questionId: "question-1", sequence: 1, score: 88, comment: "回答覆盖主要参考要点。", matchedReferencePoints: 2, totalReferencePoints: 2 }],
+    questionReviews: [{ questionId: "question-1", sequence: 1, score: 88, comment: "回答覆盖主要参考要点。", summary: "回答覆盖主要参考要点。", coveredPoints: ["JWT"], missedPoints: ["异常处理"], strengths: ["说明了 JWT"], improvements: ["补充异常处理"], improvedAnswerExample: "使用 JWT 并统一处理异常。", matchedReferencePoints: 2, totalReferencePoints: 2 }],
     strengths: ["项目理解清晰"], improvements: ["补充性能数据"], model: "deterministic-interview-report-v1", createdAt: "2026-07-10T00:00:00.000Z",
   };
 }
