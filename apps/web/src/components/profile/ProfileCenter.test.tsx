@@ -88,12 +88,13 @@ describe("ProfileCenter", () => {
     expect(screen.queryByText(/设备管理|双因素认证|账号注销/)).not.toBeInTheDocument();
   });
 
-  it("shows only the interface appearance that actually exists", () => {
+  it("describes the persisted theme controls available from the account menu", () => {
     renderProfile();
     fireEvent.click(screen.getByRole("button", { name: "偏好设置" }));
 
-    expect(screen.getByText("浅色主题 · 蓝色界面")).toBeInTheDocument();
-    expect(screen.getByText(/暂未提供可保存的主题或颜色切换能力/)).toBeInTheDocument();
+    expect(screen.getByText("浅色 / 深色主题")).toBeInTheDocument();
+    expect(screen.getByText(/可从右上角头像菜单切换界面主题/)).toBeInTheDocument();
+    expect(screen.getByText(/选择会自动保存，并在刷新后恢复/)).toBeInTheDocument();
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   });
 });
