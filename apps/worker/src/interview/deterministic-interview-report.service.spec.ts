@@ -30,4 +30,29 @@ describe('DeterministicInterviewReportService', () => {
       expect(Number.isInteger(score)).toBe(true);
     }
   });
+
+  it('creates independent, question-specific detail fields from each answer and project context', () => {
+    const report = new DeterministicInterviewReportService().generate(interview, questions, [
+      { questionId: 'q1', content: '认证使用 JWT，但还没有统一异常处理。' },
+      { questionId: 'q2', content: '数据写入使用事务，并发更新还没有行级锁。' },
+    ], { techStack: [{ name: 'NestJS' }], coreModules: [{ name: '订单模块' }] });
+    const [authReview, transactionReview] = report.questionReviews;
+    expect(authReview).not.toBe(transactionReview);
+    expect(authReview!.coveredPoints).not.toBe(transactionReview!.coveredPoints);
+    expect(authReview!.summary).toContain('JWT');
+    expect(transactionReview!.summary).toContain('事务');
+    expect(authReview!.missedPoints).toEqual(['异常处理']);
+    expect(transactionReview!.missedPoints).toEqual(['行级锁']);
+    expect(authReview!.improvements.join('')).toContain('NestJS');
+    expect(authReview!.improvedAnswerExample).not.toBe(transactionReview!.improvedAnswerExample);
+  });
+
+  it('changes the per-question review when the answer quality changes', () => {
+    const service = new DeterministicInterviewReportService();
+    const complete = service.generate({ id: 'interview', questionCount: 1 }, [questions[0]!], [answers[0]!]);
+    const incomplete = service.generate({ id: 'interview', questionCount: 1 }, [questions[0]!], [{ questionId: 'q1', content: '使用 JWT 认证。' }]);
+    expect(complete.questionReviews[0]!.score).toBeGreaterThan(incomplete.questionReviews[0]!.score);
+    expect(complete.questionReviews[0]!.coveredPoints).not.toEqual(incomplete.questionReviews[0]!.coveredPoints);
+    expect(incomplete.questionReviews[0]!.missedPoints).toEqual(['异常处理']);
+  });
 });

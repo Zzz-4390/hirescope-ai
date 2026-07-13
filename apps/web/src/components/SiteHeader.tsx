@@ -4,8 +4,9 @@ import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { getAccessToken, getCurrentUser } from "../lib/auth";
+import { type CurrentUser, getAccessToken, getCurrentUser } from "../lib/auth";
 import { Logo } from "./Logo";
+import { UserAccountMenu } from "./UserAccountMenu";
 
 const navItems = [
   { label: "首页", href: "/", key: "home" },
@@ -21,7 +22,7 @@ interface SiteHeaderProps {
 }
 
 export function SiteHeader({ current = "home" }: SiteHeaderProps) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<CurrentUser | null>(null);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
@@ -29,17 +30,17 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
 
     const validateAuthState = () => {
       getCurrentUser()
-        .then(() => {
-          if (mounted) setIsLoggedIn(true);
+        .then((currentUser) => {
+          if (mounted) setUser(currentUser);
         })
         .catch(() => {
-          if (mounted) setIsLoggedIn(false);
+          if (mounted) setUser(null);
         });
     };
 
     const updateAuthState = () => {
       if (getAccessToken()) validateAuthState();
-      else setIsLoggedIn(false);
+      else setUser(null);
     };
 
     if (getAccessToken()) validateAuthState();
@@ -66,12 +67,14 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
           ))}
         </nav>
         <div className="header-actions">
-          {isLoggedIn ? (
-            <span className="logged-in-state"><i />已登录</span>
+          {user ? (
+            <UserAccountMenu user={user} />
           ) : (
             <Link className={current === "login" ? "active" : ""} href="/login">登录</Link>
           )}
-          <Link className="header-cta" href={isLoggedIn ? "/app" : "/login"}>立即体验</Link>
+          <Link className="header-cta" href={user ? "/app" : "/login"}>
+            {user ? "进入工作台" : "立即体验"}
+          </Link>
           <button
             className="mobile-nav-toggle"
             type="button"

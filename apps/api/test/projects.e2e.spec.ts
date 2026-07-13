@@ -14,6 +14,7 @@ describe('Projects and AsyncTasks API without a worker', () => {
   let failedQueueApp: INestApplication;
   const prisma = new PrismaClient();
   const email = 'projects-e2e@example.com';
+  const username = 'projects_e2e';
   const password = 'StrongPassword123!';
   let token: string;
   let userId: string;
@@ -25,8 +26,8 @@ describe('Projects and AsyncTasks API without a worker', () => {
     app = moduleRef.createNestApplication();
     configureApplication(app);
     await app.init();
-    await request(app.getHttpServer()).post('/api/v1/auth/register').send({ email, password });
-    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email, password });
+    await request(app.getHttpServer()).post('/api/v1/auth/register').send({ username, email, password, confirmPassword: password });
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
     token = login.body.accessToken;
     userId = (await prisma.user.findUniqueOrThrow({ where: { email } })).id;
   });
@@ -92,7 +93,7 @@ describe('Projects and AsyncTasks API without a worker', () => {
   });
 
   it('returns 404 for another user resources', async () => {
-    const other = await prisma.user.create({ data: { email: 'projects-other@example.com', passwordHash: 'not-used' } });
+    const other = await prisma.user.create({ data: { username: 'projects_other', email: 'projects-other@example.com', passwordHash: 'not-used' } });
     const foreign = await prisma.project.create({ data: { userId: other.id, name: 'Foreign', originalFileName: 'x.zip', fileSize: 4n, fileHash: 'a'.repeat(64), status: ProjectStatus.UPLOADED } });
     expect((await request(app.getHttpServer()).get(`/api/v1/projects/${foreign.id}`).set('Authorization', `Bearer ${token}`)).status).toBe(404);
   });

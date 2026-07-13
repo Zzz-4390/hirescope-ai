@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getInterview, saveInterviewAnswer, submitInterview } from "../lib/interviews";
+import { findInterviewProject } from "../lib/project-collections";
 import { InterviewSessionClient } from "./InterviewSessionClient";
 
 const push = vi.fn();
@@ -13,11 +14,13 @@ vi.mock("../lib/interviews", () => ({
   startInterview: vi.fn(),
   submitInterview: vi.fn(),
 }));
+vi.mock("../lib/project-collections", () => ({ findInterviewProject: vi.fn() }));
 vi.mock("../lib/projects", () => ({ getTask: vi.fn(), isTerminalTaskStatus: vi.fn() }));
 
 describe("InterviewSessionClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(findInterviewProject).mockResolvedValue(project());
     vi.mocked(saveInterviewAnswer).mockImplementation(async (_interviewId, questionId, content) => ({
       id: `answer-${questionId}`, questionId, content, answeredAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z", currentIndex: 1,
     }));
@@ -34,6 +37,7 @@ describe("InterviewSessionClient", () => {
 
     await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledWith("interview-1", "question-1", "Redis 用于异步任务状态管理"));
     expect(screen.getByText("第 2 / 2 题")).toBeInTheDocument();
+    expect(screen.getByText(/已保存/)).toBeInTheDocument();
   });
 
   it("blocks submission when an answer is incomplete", async () => {
@@ -41,14 +45,41 @@ describe("InterviewSessionClient", () => {
     vi.mocked(getInterview).mockResolvedValue(detail(["已回答", null]));
     render(<InterviewSessionClient interviewId="interview-1" />);
 
-    await user.click(await screen.findByRole("button", { name: "提交面试" }));
+    await user.click(await screen.findByRole("button", { name: "检查并提交" }));
 
     expect(await screen.findByText("请先完成第 2 题后再提交。")).toBeInTheDocument();
     expect(submitInterview).not.toHaveBeenCalled();
   });
+
+  it("renders real project context, localized legacy category and live character count", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getInterview).mockResolvedValue(detail([null, null], "backend"));
+    render(<InterviewSessionClient interviewId="interview-1" />);
+
+    expect(await screen.findByRole("heading", { name: "模拟面试" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "电商平台重构项目" })).toHaveAttribute("href", "/app/projects/project-1");
+    expect(screen.getByText("后端开发")).toBeInTheDocument();
+    const answer = screen.getByLabelText("你的回答");
+    await user.type(answer, "中 A😀");
+    expect(screen.getByText("4 字")).toBeInTheDocument();
+  });
+
+  it("retries a failed save through the existing answer endpoint", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getInterview).mockResolvedValue(detail([null, null]));
+    vi.mocked(saveInterviewAnswer).mockRejectedValueOnce(new Error("网络错误"));
+    render(<InterviewSessionClient interviewId="interview-1" />);
+
+    await user.type(await screen.findByLabelText("你的回答"), "需要保存的回答");
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    await user.click(await screen.findByRole("button", { name: "保存失败，点击重试" }));
+
+    await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/已保存/)).toBeInTheDocument();
+  });
 });
 
-function detail(answerContents: Array<string | null>) {
+function detail(answerContents: Array<string | null>, category = "架构") {
   return {
     id: "interview-1", title: "MEDIUM 模拟面试", status: "IN_PROGRESS" as const, difficulty: "MEDIUM" as const,
     questionCount: 2, currentIndex: answerContents[0] ? 1 : 0, failure: null, startedAt: "2026-07-10T00:00:00.000Z",
@@ -56,9 +87,16 @@ function detail(answerContents: Array<string | null>) {
     answeredCount: answerContents.filter(Boolean).length,
     answerProgress: { answeredCount: answerContents.filter(Boolean).length, questionCount: 2, percentage: 50 },
     questions: answerContents.map((content, index) => ({
-      id: `question-${index + 1}`, sequence: index + 1, category: "架构", difficulty: "MEDIUM" as const, question: `问题 ${index + 1}`,
+      id: `question-${index + 1}`, sequence: index + 1, category, difficulty: "MEDIUM" as const, question: `问题 ${index + 1}`,
       answer: content ? { content, answeredAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z" } : null,
     })),
     task: null,
+  };
+}
+
+function project() {
+  return {
+    id: "project-1", name: "电商平台重构项目", originalFileName: "project.zip", fileSize: 100,
+    status: "COMPLETED" as const, failure: null, createdAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z",
   };
 }

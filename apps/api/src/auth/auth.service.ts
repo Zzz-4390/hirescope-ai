@@ -14,24 +14,25 @@ export class AuthService {
     @Inject(TOKEN_SERVICE) private readonly tokens: TokenService,
   ) {}
 
-  async register(email: string, password: string, displayName?: string): Promise<{ accepted: true }> {
+  async register(username: string, email: string, password: string): Promise<{ accepted: true }> {
+    const normalizedUsername = username.trim().toLowerCase();
     const normalizedEmail = email.trim().toLowerCase();
     const passwordHash = await this.passwords.hash(password);
     try {
-      await this.users.create(normalizedEmail, passwordHash, displayName?.trim());
+      await this.users.create(normalizedUsername, normalizedEmail, passwordHash);
     } catch (error) {
       if (typeof error !== 'object' || error === null || !('code' in error) || error.code !== 'P2002') throw error;
     }
     return { accepted: true };
   }
 
-  async login(email: string, password: string) {
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await this.users.findByEmail(normalizedEmail);
+  async login(identifier: string, password: string) {
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    const user = await this.users.findByIdentifier(normalizedIdentifier);
     const valid = user
       ? await this.passwords.verify(user.passwordHash, password)
       : await this.passwords.verifyDummy(password);
-    if (!user || !valid) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: '邮箱或密码错误' });
+    if (!user || !valid) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: '用户名、邮箱或密码错误' });
 
     try {
       const session = await this.sessions.create(user.id);
@@ -40,7 +41,7 @@ export class AuthService {
         accessToken,
         expiresIn: 900,
         cookieValue: session.cookieValue,
-        user: { id: user.id, email: user.email, displayName: user.displayName },
+        user: { id: user.id, username: user.username, email: user.email, displayName: user.displayName },
       };
     } catch {
       throw new ServiceUnavailableException({ code: 'AUTH_SESSION_UNAVAILABLE', message: '认证服务暂时不可用' });

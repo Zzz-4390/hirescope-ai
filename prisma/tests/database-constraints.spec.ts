@@ -21,6 +21,7 @@ describe('database constraints', () => {
     await prisma.user.create({
       data: {
         id: userId,
+        username: `db_${userId.replaceAll('-', '')}`.slice(0, 30),
         email: `db-${userId}@example.com`,
         passwordHash: 'test-only-hash',
       },
@@ -40,6 +41,7 @@ describe('database constraints', () => {
     await prisma.user.create({
       data: {
         id: otherUserId,
+        username: `db_${otherUserId.replaceAll('-', '')}`.slice(0, 30),
         email: `db-${otherUserId}@example.com`,
         passwordHash: 'test-only-hash',
       },
@@ -73,9 +75,34 @@ describe('database constraints', () => {
     await expect(
       prisma.user.create({
         data: {
+          username: `db_${randomUUID().replaceAll('-', '')}`.slice(0, 30),
           email: ` UPPER-${randomUUID()}@EXAMPLE.COM `,
           passwordHash: 'test-only-hash',
         },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it.each(['UPPER_NAME', 'bad-name', 'ab'])('rejects invalid username %s', async (username) => {
+    await expect(
+      prisma.user.create({
+        data: {
+          username,
+          email: `db-${randomUUID()}@example.com`,
+          passwordHash: 'test-only-hash',
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects duplicate usernames', async () => {
+    const username = `db_${randomUUID().replaceAll('-', '')}`.slice(0, 30);
+    await prisma.user.create({
+      data: { username, email: `db-${randomUUID()}@example.com`, passwordHash: 'test-only-hash' },
+    });
+    await expect(
+      prisma.user.create({
+        data: { username, email: `db-${randomUUID()}@example.com`, passwordHash: 'test-only-hash' },
       }),
     ).rejects.toThrow();
   });

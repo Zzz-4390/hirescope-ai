@@ -26,15 +26,15 @@ export class AuthController {
   async register(@Body(new DtoValidationPipe(RegisterDto)) dto: RegisterDto, @Req() request: Request) {
     const limit = this.config.rateLimits.register;
     await this.rateLimits.assertRegisterAllowed(this.ip(request), limit.limit, limit.windowSeconds);
-    return this.auth.register(dto.email, dto.password, dto.displayName);
+    return this.auth.register(dto.username, dto.email, dto.password);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body(new DtoValidationPipe(LoginDto)) dto: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const limit = this.config.rateLimits.login;
-    await this.rateLimits.assertLoginAllowed(this.ip(request), dto.email, limit.limit, limit.windowSeconds);
-    const result = await this.auth.login(dto.email, dto.password);
+    await this.rateLimits.assertLoginAllowed(this.ip(request), dto.identifier, limit.limit, limit.windowSeconds);
+    const result = await this.auth.login(dto.identifier, dto.password);
     this.setRefreshCookie(response, result.cookieValue);
     const { cookieValue: _cookie, ...body } = result;
     return body;

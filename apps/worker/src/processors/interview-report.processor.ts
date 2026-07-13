@@ -11,8 +11,8 @@ export class InterviewReportProcessor {
     const task = await this.prisma.asyncTask.findUnique({
       where: { id: taskId },
       include: {
-        project: { select: { status: true } },
-        interview: { select: { id: true, userId: true, status: true, questionCount: true, report: { select: { id: true } }, questions: { orderBy: { sequence: 'asc' }, select: { id: true, sequence: true, question: true, referencePoints: true, answer: { select: { questionId: true, content: true } } } } } },
+        project: { select: { status: true, analysis: { select: { summary: true, techStack: true, coreModules: true } } } },
+        interview: { select: { id: true, userId: true, status: true, questionCount: true, report: { select: { id: true } }, questions: { orderBy: { sequence: 'asc' }, select: { id: true, sequence: true, category: true, question: true, referencePoints: true, answer: { select: { questionId: true, content: true } } } } } },
       },
     });
     if (!task || task.type !== TaskType.INTERVIEW_REPORT_GENERATION || !task.projectId || !task.interviewId || !task.project || !task.interview) throw new Error('TASK_NOT_FOUND');
@@ -23,11 +23,11 @@ export class InterviewReportProcessor {
     if (task.status !== TaskStatus.QUEUED && task.status !== TaskStatus.PROCESSING) throw new Error('TASK_NOT_READY');
     if (!await this.claim(task.id, task.interviewId, task.projectId)) return;
 
-    const questions = task.interview.questions.map((question) => ({ id: question.id, sequence: question.sequence, question: question.question, referencePoints: jsonStrings(question.referencePoints) }));
+    const questions = task.interview.questions.map((question) => ({ id: question.id, sequence: question.sequence, category: question.category, question: question.question, referencePoints: jsonStrings(question.referencePoints) }));
     const answers = task.interview.questions.flatMap((question) => question.answer ? [question.answer] : []);
     if (questions.length !== task.interview.questionCount || answers.length !== task.interview.questionCount) return this.fail(task.id, task.interviewId, 'INTERVIEW_REPORT_INPUT_INVALID');
 
-    const candidate = this.generator.generate({ id: task.interview.id, questionCount: task.interview.questionCount }, questions, answers);
+    const candidate = this.generator.generate({ id: task.interview.id, questionCount: task.interview.questionCount }, questions, answers, task.project.analysis ?? {});
     const parsed = InterviewReportResultSchema.safeParse(candidate);
     if (!parsed.success || parsed.data.questionReviews.length !== task.interview.questionCount) return this.fail(task.id, task.interviewId, 'INTERVIEW_REPORT_RESULT_INVALID');
     await this.finish(task.id, task.interviewId, task.projectId, task.userId, parsed.data);

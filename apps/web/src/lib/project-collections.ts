@@ -37,3 +37,10 @@ export async function listAllProjectInterviews(projects: Project[]): Promise<Pro
     (left, right) => new Date(right.interview.updatedAt).getTime() - new Date(left.interview.updatedAt).getTime(),
   );
 }
+
+export async function findInterviewProject(interviewId: string): Promise<Project | null> {
+  const projects = await listAllProjects();
+  if (projects.length === 0) return null;
+  const item = (await listAllProjectInterviews(projects)).find(({ interview }) => interview.id === interviewId);
+  return item?.project ?? null;
+}

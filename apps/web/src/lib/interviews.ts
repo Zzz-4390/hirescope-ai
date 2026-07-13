@@ -91,6 +91,12 @@ export interface InterviewQuestionReview {
   sequence: number;
   score: number;
   comment: string;
+  summary?: string;
+  coveredPoints?: string[];
+  missedPoints?: string[];
+  strengths?: string[];
+  improvements?: string[];
+  improvedAnswerExample?: string;
   matchedReferencePoints: number;
   totalReferencePoints: number;
 }

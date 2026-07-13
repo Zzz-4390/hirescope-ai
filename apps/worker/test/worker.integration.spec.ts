@@ -40,7 +40,7 @@ describe('Project Analysis Worker integration', () => {
   const queue = new Queue(TASK_QUEUE_NAME, { connection: redisConnection(process.env.REDIS_URL!) });
   let userId: string;
 
-  beforeAll(async () => { userId = (await prisma.user.create({ data: { email: 'worker-integration@example.com', passwordHash: 'test-only' } })).id; });
+  beforeAll(async () => { userId = (await prisma.user.create({ data: { username: 'worker_integration', email: 'worker-integration@example.com', passwordHash: 'test-only' } })).id; });
   afterAll(async () => { await queue.obliterate({ force: true }); await queue.close(); await prisma.user.deleteMany({ where: { email: 'worker-integration@example.com' } }); await prisma.$disconnect(); });
 
   it('analyzes once and remains idempotent on duplicate delivery', async () => {

@@ -4,8 +4,14 @@ import { InterviewReportProcessor } from './interview-report.processor';
 
 describe('InterviewReportProcessor', () => {
   it('creates the report and all terminal state changes atomically', async () => {
-    const { processor, tx } = setup();
+    const { processor, generator, tx } = setup();
     await processor.process('task');
+    expect(generator.generate).toHaveBeenCalledWith(
+      { id: 'interview', questionCount: 2 },
+      expect.arrayContaining([expect.objectContaining({ id: 'q1', category: 'auth', referencePoints: ['point'] })]),
+      expect.arrayContaining([expect.objectContaining({ questionId: 'q1', content: 'point answer' })]),
+      expect.objectContaining({ summary: 'summary', techStack: [{ name: 'TypeScript' }] }),
+    );
     expect(tx.interviewReport.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ interviewId: 'interview', userId: 'user', overallScore: 80, model: 'deterministic-interview-report-v1' }) }));
     expect(tx.interview.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.COMPLETED, completedAt: expect.any(Date) }) }));
     expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.SUCCEEDED, progress: 100 }) }));
@@ -58,6 +64,6 @@ function setup(value = task(), generated: any = validReport()) {
   return { processor: new InterviewReportProcessor(prisma as never, generator as never), generator, tx };
 }
 function task(status: TaskStatus = TaskStatus.QUEUED, projectStatus: ProjectStatus = ProjectStatus.COMPLETED, interviewStatus: InterviewStatus = InterviewStatus.REPORT_GENERATING, hasReport = false): any {
-  return { id: 'task', type: TaskType.INTERVIEW_REPORT_GENERATION, status, userId: 'user', projectId: 'project', interviewId: 'interview', project: { status: projectStatus }, interview: { id: 'interview', userId: 'user', status: interviewStatus, questionCount: 2, report: hasReport ? { id: 'report' } : null, questions: [{ id: 'q1', sequence: 1, question: 'Q1', referencePoints: ['point'], answer: { questionId: 'q1', content: 'point answer' } }, { id: 'q2', sequence: 2, question: 'Q2', referencePoints: ['detail'], answer: { questionId: 'q2', content: 'detail answer' } }] } };
+  return { id: 'task', type: TaskType.INTERVIEW_REPORT_GENERATION, status, userId: 'user', projectId: 'project', interviewId: 'interview', project: { status: projectStatus, analysis: { summary: 'summary', techStack: [{ name: 'TypeScript' }], coreModules: [] } }, interview: { id: 'interview', userId: 'user', status: interviewStatus, questionCount: 2, report: hasReport ? { id: 'report' } : null, questions: [{ id: 'q1', sequence: 1, category: 'auth', question: 'Q1', referencePoints: ['point'], answer: { questionId: 'q1', content: 'point answer' } }, { id: 'q2', sequence: 2, category: 'database', question: 'Q2', referencePoints: ['detail'], answer: { questionId: 'q2', content: 'detail answer' } }] } };
 }
-function validReport() { return { overallScore: 80, summary: 'summary', dimensions: { projectUnderstanding: 82, technicalAccuracy: 80, communication: 78, problemSolving: 81 }, questionReviews: [{ questionId: 'q1', sequence: 1, score: 80, comment: 'ok', matchedReferencePoints: 1, totalReferencePoints: 1 }, { questionId: 'q2', sequence: 2, score: 80, comment: 'ok', matchedReferencePoints: 1, totalReferencePoints: 1 }], strengths: ['strength'], improvements: ['improvement'], model: 'deterministic-interview-report-v1' }; }
+function validReport() { const review = (questionId: string, sequence: number) => ({ questionId, sequence, score: 80, comment: 'ok', summary: 'specific summary', coveredPoints: ['point'], missedPoints: [], strengths: ['strength'], improvements: ['improvement'], improvedAnswerExample: 'better answer', matchedReferencePoints: 1, totalReferencePoints: 1 }); return { overallScore: 80, summary: 'summary', dimensions: { projectUnderstanding: 82, technicalAccuracy: 80, communication: 78, problemSolving: 81 }, questionReviews: [review('q1', 1), review('q2', 2)], strengths: ['strength'], improvements: ['improvement'], model: 'deterministic-interview-report-v1' }; }

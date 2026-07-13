@@ -55,6 +55,7 @@ describe('InterviewReportsService', () => {
     const completed = await service.get('user', 'interview');
     expect(completed.status).toBe(InterviewStatus.COMPLETED);
     expect(completed.report).toMatchObject({ overallScore: 82, model: 'deterministic-interview-report-v1' });
+    expect(completed.report).toMatchObject({ questionReviews: [expect.objectContaining({ summary: 'JWT 覆盖完整', coveredPoints: ['JWT'], missedPoints: [], strengths: ['认证方案清晰'], improvements: ['补充边界'], improvedAnswerExample: '使用 JWT 并处理失效场景。' })] });
     expect(completed.report).not.toHaveProperty('result');
     expect(JSON.stringify(completed)).not.toContain('referencePoints');
   });
@@ -73,4 +74,4 @@ function transaction(status: InterviewStatus | null) {
     interviewReport: { findUnique: vi.fn().mockResolvedValue(null) },
   };
 }
-function reportRow() { return { id: 'report', overallScore: 82, summary: 'summary', dimensions: {}, questionReviews: [], strengths: ['s'], improvements: ['i'], result: { referencePoints: ['private'] }, model: 'deterministic-interview-report-v1', createdAt: new Date(0) }; }
+function reportRow() { return { id: 'report', overallScore: 82, summary: 'summary', dimensions: {}, questionReviews: [{ questionId: 'q1', sequence: 1, score: 82, comment: 'JWT 覆盖完整', summary: 'JWT 覆盖完整', coveredPoints: ['JWT'], missedPoints: [], strengths: ['认证方案清晰'], improvements: ['补充边界'], improvedAnswerExample: '使用 JWT 并处理失效场景。', matchedReferencePoints: 1, totalReferencePoints: 1 }], strengths: ['s'], improvements: ['i'], result: { referencePoints: ['private'] }, model: 'deterministic-interview-report-v1', createdAt: new Date(0) }; }

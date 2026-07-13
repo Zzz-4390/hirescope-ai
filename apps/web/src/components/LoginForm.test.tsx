@@ -28,7 +28,7 @@ describe("LoginForm", () => {
     expect(password).toHaveAttribute("type", "text");
   });
 
-  it("submits email/password, saves token and enters the app", async () => {
+  it("submits identifier/password, saves token and enters the app", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ accessToken: "token-123" }), {
@@ -38,17 +38,21 @@ describe("LoginForm", () => {
     );
     render(<LoginForm />);
 
-    await user.type(screen.getByLabelText("电子邮箱"), "candidate@example.com");
+    await user.type(screen.getByLabelText("用户名或邮箱"), "Candidate_01");
     await user.type(screen.getByLabelText("密码"), "secret123");
     await user.click(screen.getByRole("button", { name: "登录" }));
 
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/v1/auth/login",
+      expect.objectContaining({ body: JSON.stringify({ identifier: "candidate_01", password: "secret123" }) }),
+    );
     expect(await screen.findByText("登录成功，正在进入工作台")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "登录成功" })).toBeDisabled();
     expect(localStorage.getItem("hirescope.accessToken")).toBe("token-123");
     expect(push).toHaveBeenCalledWith("/app");
   });
 
-  it("remembers the account email when requested", async () => {
+  it("remembers the account identifier when requested", async () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ accessToken: "token-123" }), {
@@ -58,12 +62,12 @@ describe("LoginForm", () => {
     );
     render(<LoginForm />);
 
-    await user.type(screen.getByLabelText("电子邮箱"), "candidate@example.com");
+    await user.type(screen.getByLabelText("用户名或邮箱"), "candidate_01");
     await user.type(screen.getByLabelText("密码"), "secret123");
     await user.click(screen.getByRole("checkbox", { name: "记住我的账号" }));
     await user.click(screen.getByRole("button", { name: "登录" }));
 
-    expect(localStorage.getItem("hirescope.rememberedEmail")).toBe("candidate@example.com");
+    expect(localStorage.getItem("hirescope.rememberedIdentifier")).toBe("candidate_01");
   });
 
   it("shows a loading state while the request is pending", async () => {
@@ -71,7 +75,7 @@ describe("LoginForm", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => undefined));
     render(<LoginForm />);
 
-    await user.type(screen.getByLabelText("电子邮箱"), "candidate@example.com");
+    await user.type(screen.getByLabelText("用户名或邮箱"), "candidate@example.com");
     await user.type(screen.getByLabelText("密码"), "secret123");
     await user.click(screen.getByRole("button", { name: "登录" }));
 
@@ -82,17 +86,17 @@ describe("LoginForm", () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
-        JSON.stringify({ error: { message: "邮箱或密码错误" } }),
+        JSON.stringify({ error: { message: "用户名、邮箱或密码错误" } }),
         { status: 401, headers: { "Content-Type": "application/json" } },
       ),
     );
     render(<LoginForm />);
 
-    await user.type(screen.getByLabelText("电子邮箱"), "candidate@example.com");
+    await user.type(screen.getByLabelText("用户名或邮箱"), "candidate@example.com");
     await user.type(screen.getByLabelText("密码"), "wrong-password");
     await user.click(screen.getByRole("button", { name: "登录" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("邮箱或密码错误");
+    expect(await screen.findByRole("alert")).toHaveTextContent("用户名、邮箱或密码错误");
     expect(push).not.toHaveBeenCalled();
   });
 });
