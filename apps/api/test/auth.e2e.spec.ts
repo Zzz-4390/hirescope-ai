@@ -31,6 +31,8 @@ describe('Auth API', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({ where: { email: { endsWith: '@example.com' } } });
+    const registerRateLimitKeys = await redis.keys('auth:rate:register:*');
+    if (registerRateLimitKeys.length) await redis.del(...registerRateLimitKeys);
     await prisma.$disconnect();
     await redis.quit();
     if (app) await app.close();
