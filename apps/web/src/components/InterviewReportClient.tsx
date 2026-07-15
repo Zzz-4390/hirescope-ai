@@ -339,7 +339,7 @@ function difficultyText(difficulty: InterviewDetail["difficulty"]) {
 }
 
 function FailurePanel({ message }: { message: string }) {
-  return <div className="empty-panel"><AlertCircle aria-hidden="true" /><h2>报告暂不可用</h2><p>{message}</p></div>;
+  return <div className="empty-panel interview-report-error-panel"><AlertCircle aria-hidden="true" /><h2>报告暂不可用</h2><p>{message}</p></div>;
 }
 
 function taskStatusText(status: AsyncTask["status"]) {
