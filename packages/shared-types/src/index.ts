@@ -38,6 +38,7 @@ export const InterviewQuestionSchema = z.object({
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
   question: z.string().min(1),
   referencePoints: z.array(z.string().min(1)),
+  evidencePaths: z.array(z.string().min(1)).min(1).max(5),
 }).strict();
 export const InterviewQuestionsResultSchema = z.object({ questions: z.array(InterviewQuestionSchema).min(1) }).strict();
 export type InterviewQuestionsResult = z.infer<typeof InterviewQuestionsResultSchema>;

@@ -66,7 +66,13 @@ export class InterviewReportProcessor {
   private fail(taskId: string, interviewId: string, code: string): Promise<void> { return this.prisma.$transaction((tx) => failRows(tx, taskId, interviewId, code)); }
 }
 
-function jsonStrings(value: Prisma.JsonValue): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []; }
+function jsonStrings(value: Prisma.JsonValue): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
+  if (value && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.points)) {
+    return value.points.filter((item): item is string => typeof item === 'string');
+  }
+  return [];
+}
 function deleting(status: ProjectStatus): boolean { return status === ProjectStatus.DELETING || status === ProjectStatus.DELETED; }
 async function lockRows(tx: Prisma.TransactionClient, taskId: string, interviewId: string, projectId: string): Promise<LockedRows | null> {
   const rows = await tx.$queryRaw<LockedRows[]>(Prisma.sql`SELECT t.status AS "taskStatus", i.status AS "interviewStatus", p.status AS "projectStatus" FROM async_tasks t JOIN interviews i ON i.id = t.interview_id JOIN projects p ON p.id = t.project_id WHERE t.id = ${taskId}::uuid AND i.id = ${interviewId}::uuid AND p.id = ${projectId}::uuid FOR UPDATE OF t, i, p`);

@@ -70,4 +70,38 @@ describe('CodeReviewContextBuilder', () => {
     expect(context.snippets.map((snippet) => snippet.path)).toEqual([...context.snippets.map((snippet) => snippet.path)].sort());
     expect(context.snippets.some((snippet) => snippet.truncated)).toBe(true);
   });
+
+  it('keeps evidence from multiple deeply nested monorepo subprojects', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'hirescope-review-monorepo-'));
+    const files = [
+      ['wrapper/apps/api/package.json', '{}'],
+      ['wrapper/apps/api/src/main.ts', 'export function bootstrapApi() {}'],
+      ['wrapper/apps/api/test/api.spec.ts', 'describe("api", () => {})'],
+      ['wrapper/apps/worker/package.json', '{}'],
+      ['wrapper/apps/worker/src/main.ts', 'export function bootstrapWorker() {}'],
+      ['wrapper/apps/worker/tests/worker.test.ts', 'describe("worker", () => {})'],
+    ] as const;
+    for (const [path, content] of files) {
+      const segments = path.split('/');
+      await mkdir(join(root, ...segments.slice(0, -1)), { recursive: true });
+      await writeFile(join(root, ...segments), content);
+    }
+    const analysis = {
+      techStack: [{ name: 'TypeScript' }],
+      directoryTree: files.map(([path]) => ({ path, type: 'file' as const })),
+      coreModules: [
+        { name: 'api', path: 'wrapper/apps/api/src', description: 'api' },
+        { name: 'worker', path: 'wrapper/apps/worker/src', description: 'worker' },
+      ],
+      entryFiles: ['wrapper/apps/api/src/main.ts', 'wrapper/apps/worker/src/main.ts'],
+      statistics: { totalFiles: files.length },
+    };
+
+    const context = await new CodeReviewContextBuilder().build(root, analysis);
+
+    expect(context.entryFiles).toEqual(['wrapper/apps/api/src/main.ts', 'wrapper/apps/worker/src/main.ts']);
+    expect(context.testFiles).toEqual(['wrapper/apps/api/test/api.spec.ts', 'wrapper/apps/worker/tests/worker.test.ts']);
+    expect(context.configFiles).toEqual(['wrapper/apps/api/package.json', 'wrapper/apps/worker/package.json']);
+    expect(context.evidencePaths).toEqual(expect.arrayContaining(files.map(([path]) => path)));
+  });
 });

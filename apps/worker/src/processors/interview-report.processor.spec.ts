@@ -17,6 +17,16 @@ describe('InterviewReportProcessor', () => {
     expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.SUCCEEDED, progress: 100 }) }));
   });
 
+  it('uses only scoring points from evidence metadata and does not pass paths to the report generator', async () => {
+    const value = task();
+    value.interview.questions[0].referencePoints = { points: ['point'], evidencePaths: ['src/auth.ts'] };
+    const { processor, generator } = setup(value);
+    await processor.process('task');
+    const questions = generator.generate.mock.calls[0]![1];
+    expect(questions[0].referencePoints).toEqual(['point']);
+    expect(JSON.stringify(questions)).not.toContain('src/auth.ts');
+  });
+
   it('returns idempotently for succeeded tasks and existing completed reports', async () => {
     const succeeded = setup(task(TaskStatus.SUCCEEDED));
     await succeeded.processor.process('task');

@@ -74,7 +74,7 @@ export async function startWorkerRuntime(options: RuntimeOptions) {
   const analysis = new ProjectAnalysisProcessor(prisma, paths, new ZipExtractorService(options.limits), new ProjectAnalyzerService(options.limits.maxTextReadBytes));
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
   const codeReview = new CodeReviewProcessor(prisma, createCodeReviewGenerator(prisma, options.ai), paths, new CodeReviewContextBuilder());
-  const interviewQuestions = new InterviewQuestionProcessor(prisma, createInterviewQuestionGenerator(prisma, options.ai));
+  const interviewQuestions = new InterviewQuestionProcessor(prisma, createInterviewQuestionGenerator(prisma, options.ai), paths, new CodeReviewContextBuilder());
   const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
   const recovery = new TaskRecoveryService(prisma, queue, options.recoveryBatchSize);
   const worker = new Worker(options.queueName ?? TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions, interviewReports), { connection, concurrency: 2 });

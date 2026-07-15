@@ -14,6 +14,7 @@ import { TaskRecoveryService } from '../src/recovery/task-recovery.service';
 import { createTaskHandler, redisConnection } from '../src/runtime';
 import { StoragePathService } from '../src/storage/storage-path.service';
 import { DeterministicCodeReviewService } from '../src/code-review/deterministic-code-review.service';
+import { CodeReviewContextBuilder } from '../src/code-review/code-review-context-builder';
 import { CodeReviewProcessor } from '../src/processors/code-review.processor';
 import { DeterministicInterviewQuestionService } from '../src/interview/deterministic-interview-question.service';
 import { InterviewQuestionProcessor } from '../src/processors/interview-question.processor';
@@ -35,7 +36,7 @@ describe('Project Analysis Worker integration', () => {
   const analysis = new ProjectAnalysisProcessor(prisma, paths, new ZipExtractorService(DEFAULT_EXTRACTION_LIMITS), new ProjectAnalyzerService(DEFAULT_EXTRACTION_LIMITS.maxTextReadBytes));
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
   const codeReview = new CodeReviewProcessor(prisma, new DeterministicCodeReviewService());
-  const interviewQuestions = new InterviewQuestionProcessor(prisma, new DeterministicInterviewQuestionService());
+  const interviewQuestions = new InterviewQuestionProcessor(prisma, new DeterministicInterviewQuestionService(), paths, new CodeReviewContextBuilder());
   const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
   const queue = new Queue(TASK_QUEUE_NAME, { connection: redisConnection(process.env.REDIS_URL!) });
   let userId: string;
@@ -141,10 +142,10 @@ describe('Project Analysis Worker integration', () => {
   });
 
   it('consumes INTERVIEW_QUESTION_GENERATION and remains idempotent', async () => {
-    await queue.drain(true); const project = await prisma.project.create({ data: { userId, name: 'Interview Queue E2E', originalFileName: 'source.zip', fileSize: 4n, fileHash: '3'.repeat(64), status: ProjectStatus.COMPLETED, analysis: { create: { summary: 'Analyzed', techStack: [{ name: 'TypeScript', category: 'language' }], directoryTree: [], coreModules: [{ name: 'API', path: 'src/api', description: 'API' }], entryFiles: ['src/index.ts'], statistics: { totalFiles: 3, totalLines: 100, languages: { TypeScript: 100 } }, analyzerVersion: 'deterministic-v1' } } } });
+    await queue.drain(true); const projectId = randomUUID(); const extractStoragePath = `projects/${userId}/${projectId}/extracted`; const extractRoot = paths.resolveStoredPath(extractStoragePath); await mkdir(join(extractRoot, 'src'), { recursive: true }); await mkdir(join(extractRoot, 'test'), { recursive: true }); await writeFile(join(extractRoot, 'src', 'main.ts'), 'export async function bootstrap() { return true; }'); await writeFile(join(extractRoot, 'test', 'main.spec.ts'), 'describe("bootstrap", () => {});'); const project = await prisma.project.create({ data: { id: projectId, userId, name: 'Interview Queue E2E', originalFileName: 'source.zip', extractStoragePath, fileSize: 4n, fileHash: '3'.repeat(64), status: ProjectStatus.COMPLETED, analysis: { create: { summary: 'Analyzed', techStack: [{ name: 'TypeScript', category: 'language' }], directoryTree: [{ path: 'src/main.ts', type: 'file' }, { path: 'test/main.spec.ts', type: 'file' }], coreModules: [{ name: 'API', path: 'src', description: 'API' }], entryFiles: ['src/main.ts'], statistics: { totalFiles: 2, totalLines: 2, languages: { TypeScript: 2 } }, analyzerVersion: 'deterministic-v1' } } } });
     const interview = await prisma.interview.create({ data: { userId, projectId: project.id, title: 'MEDIUM 模拟面试', status: 'GENERATING', difficulty: 'MEDIUM', questionCount: 8 } }); const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, interviewId: interview.id, type: TaskType.INTERVIEW_QUESTION_GENERATION, status: TaskStatus.QUEUED } });
     const connection = redisConnection(process.env.REDIS_URL!); const events = new QueueEvents(TASK_QUEUE_NAME, { connection }); await events.waitUntilReady(); const worker = new Worker(TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions), { connection }); await worker.waitUntilReady();
-    try { const job = await queue.add(TaskType.INTERVIEW_QUESTION_GENERATION, { taskId: task.id }, { jobId: task.id }); await job.waitUntilFinished(events, 15_000); await interviewQuestions.process(task.id); expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: 'READY' }); expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 }); const questions = await prisma.interviewQuestion.findMany({ where: { interviewId: interview.id }, orderBy: { sequence: 'asc' } }); expect(questions).toHaveLength(8); expect(questions.map((value) => value.sequence)).toEqual([1,2,3,4,5,6,7,8]); }
+    try { const job = await queue.add(TaskType.INTERVIEW_QUESTION_GENERATION, { taskId: task.id }, { jobId: task.id }); await job.waitUntilFinished(events, 15_000); await interviewQuestions.process(task.id); expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: 'READY' }); expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 }); const questions = await prisma.interviewQuestion.findMany({ where: { interviewId: interview.id }, orderBy: { sequence: 'asc' } }); expect(questions).toHaveLength(8); expect(questions.map((value) => value.sequence)).toEqual([1,2,3,4,5,6,7,8]); expect(questions.every((value) => { const metadata = value.referencePoints as { evidencePaths?: string[] }; return metadata.evidencePaths?.every((path) => ['src/main.ts', 'test/main.spec.ts'].includes(path)); })).toBe(true); }
     finally { await worker.close(); await events.close(); }
   });
 
