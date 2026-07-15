@@ -20,6 +20,8 @@ import { DeterministicInterviewQuestionService } from '../src/interview/determin
 import { InterviewQuestionProcessor } from '../src/processors/interview-question.processor';
 import { DeterministicInterviewReportService } from '../src/interview/deterministic-interview-report.service';
 import { InterviewReportProcessor } from '../src/processors/interview-report.processor';
+import { AiInterviewReportService } from '../src/interview/ai-interview-report.service';
+import { AiProviderError } from '../src/ai/openai-compatible.provider';
 
 async function createZip(path: string, entries: Record<string, string>) {
   const zip = new ZipFile();
@@ -158,7 +160,24 @@ describe('Project Analysis Worker integration', () => {
     expect(await prisma.interviewReport.count({ where: { interviewId: interview.id } })).toBe(1);
     expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: InterviewStatus.COMPLETED, completedAt: expect.any(Date) });
     expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 });
-    expect(await prisma.interviewReport.findUnique({ where: { interviewId: interview.id } })).toMatchObject({ model: 'deterministic-interview-report-v1', overallScore: expect.any(Number) });
+    const report = await prisma.interviewReport.findUnique({ where: { interviewId: interview.id } });
+    expect(report).toMatchObject({ model: 'deterministic-interview-report-v1', overallScore: 100 });
+    const reviews = report!.questionReviews as Array<{ score: number; coveredPoints: string[]; missedPoints: string[]; rubric: Array<{ score: number; weight: number; evidence: string[] }>; answerEvidence: string[] }>;
+    expect(reviews).toHaveLength(5);
+    expect(reviews.every((review) => review.score === review.rubric.reduce((total, point) => total + point.score, 0) && review.rubric.reduce((total, point) => total + point.weight, 0) === 100 && review.coveredPoints.length > 0 && review.missedPoints.length === 0 && review.answerEvidence.length > 0)).toBe(true);
+  });
+
+  it('persists an explainable report and completes the task when the AI Judge is unavailable', async () => {
+    const project = await prisma.project.create({ data: { userId, name: 'Fallback Report', originalFileName: 'fallback.zip', fileSize: 4n, fileHash: '6'.repeat(64), status: ProjectStatus.COMPLETED } });
+    const interview = await prisma.interview.create({ data: { userId, projectId: project.id, title: 'Fallback', status: InterviewStatus.REPORT_GENERATING, difficulty: InterviewDifficulty.MEDIUM, questionCount: 5, submittedAt: new Date(), questions: { create: Array.from({ length: 5 }, (_, index) => ({ sequence: index + 1, category: 'reliability', difficulty: InterviewDifficulty.MEDIUM, question: 'How do you make writes idempotent?', referencePoints: ['幂等'] })) } }, include: { questions: true } });
+    await prisma.interviewAnswer.createMany({ data: interview.questions.map((question) => ({ userId, interviewId: interview.id, questionId: question.id, content: 'We use an idempotency key to deduplicate repeated write requests.' })) });
+    const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.QUEUED } });
+    const unavailableProvider = { providerName: 'openai-compatible', model: 'offline', completeJson: async () => { throw new AiProviderError('AI_UPSTREAM_ERROR', 1, 500); } };
+    const fallbackProcessor = new InterviewReportProcessor(prisma, new AiInterviewReportService(unavailableProvider as never, { record: async () => undefined }));
+    await fallbackProcessor.process(task.id);
+    const report = await prisma.interviewReport.findUnique({ where: { interviewId: interview.id } });
+    expect(report?.questionReviews).toEqual(Array.from({ length: 5 }, () => expect.objectContaining({ score: 100, coveredPoints: expect.arrayContaining(['幂等']), answerEvidence: ['We use an idempotency key to deduplicate repeated write requests.'] })));
+    expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 });
   });
 
   it('recovers a pending interview report task with taskId-only payload', async () => {

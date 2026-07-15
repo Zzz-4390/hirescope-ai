@@ -1,11 +1,11 @@
 import { InterviewReportResultSchema, type InterviewReportResult } from '@hirescope/shared-types';
 import { InterviewStatus, Prisma, PrismaClient, ProjectStatus, TaskStatus, TaskType } from '@prisma/client';
-import type { DeterministicInterviewReportService } from '../interview/deterministic-interview-report.service';
+import type { InterviewReportGenerator } from '../interview/interview-report-generator';
 
 type LockedRows = { taskStatus: TaskStatus; interviewStatus: InterviewStatus; projectStatus: ProjectStatus };
 
 export class InterviewReportProcessor {
-  constructor(private readonly prisma: PrismaClient, private readonly generator: DeterministicInterviewReportService) {}
+  constructor(private readonly prisma: PrismaClient, private readonly generator: InterviewReportGenerator) {}
 
   async process(taskId: string): Promise<void> {
     const task = await this.prisma.asyncTask.findUnique({
@@ -27,9 +27,15 @@ export class InterviewReportProcessor {
     const answers = task.interview.questions.flatMap((question) => question.answer ? [question.answer] : []);
     if (questions.length !== task.interview.questionCount || answers.length !== task.interview.questionCount) return this.fail(task.id, task.interviewId, 'INTERVIEW_REPORT_INPUT_INVALID');
 
-    const candidate = this.generator.generate({ id: task.interview.id, questionCount: task.interview.questionCount }, questions, answers, task.project.analysis ?? {});
+    const candidate = await this.generator.generate(
+      { id: task.interview.id, questionCount: task.interview.questionCount },
+      questions,
+      answers,
+      task.project.analysis ?? {},
+      { userId: task.userId, projectId: task.projectId, taskId: task.id },
+    );
     const parsed = InterviewReportResultSchema.safeParse(candidate);
-    if (!parsed.success || parsed.data.questionReviews.length !== task.interview.questionCount) return this.fail(task.id, task.interviewId, 'INTERVIEW_REPORT_RESULT_INVALID');
+    if (!parsed.success || parsed.data.questionReviews.length !== task.interview.questionCount || parsed.data.questionReviews.some((review) => !review.rubric || !review.answerEvidence)) return this.fail(task.id, task.interviewId, 'INTERVIEW_REPORT_RESULT_INVALID');
     await this.finish(task.id, task.interviewId, task.projectId, task.userId, parsed.data);
   }
 
