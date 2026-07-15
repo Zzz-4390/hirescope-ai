@@ -10,6 +10,7 @@ build/
 .next/
 apps/web/next-env.d.ts
 coverage/
+test-results/
 *.log
 *.tsbuildinfo
 storage/*
