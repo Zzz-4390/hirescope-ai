@@ -28,7 +28,7 @@ describe('InterviewReportProcessor', () => {
     expect(JSON.stringify(questions)).not.toContain('src/auth.ts');
   });
 
-  it('returns idempotently for succeeded tasks and existing completed reports', async () => {
+  it('returns idempotently for succeeded tasks and preserves the single report produced by a concurrent retry', async () => {
     const succeeded = setup(task(TaskStatus.SUCCEEDED));
     await succeeded.processor.process('task');
     expect(succeeded.generator.generate).not.toHaveBeenCalled();

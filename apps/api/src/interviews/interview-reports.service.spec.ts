@@ -11,7 +11,7 @@ describe('InterviewReportsService', () => {
     const queue = { enqueue: vi.fn().mockResolvedValue(undefined) };
     const result = await new InterviewReportsService(prisma as never, queue as never).create('user', 'interview');
     expect(tx.asyncTask.create).toHaveBeenCalledWith({ data: { userId: 'user', projectId: 'project', interviewId: 'interview', type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.PENDING }, select: { id: true, type: true, status: true } });
-    expect(tx.interview.update).toHaveBeenCalledWith({ where: { id: 'interview' }, data: { status: InterviewStatus.REPORT_GENERATING, failureCode: null, failureMessage: null } });
+    expect(tx.interview.update).toHaveBeenCalledWith({ where: { id: 'interview' }, data: { status: InterviewStatus.REPORT_GENERATING, failureCode: null, failureMessage: null, completedAt: null } });
     expect(queue.enqueue).toHaveBeenCalledWith(TaskType.INTERVIEW_REPORT_GENERATION, 'task');
     expect(prisma.asyncTask.update).toHaveBeenCalledWith({ where: { id: 'task' }, data: { status: TaskStatus.QUEUED, bullJobId: 'task' } });
     expect(result).toMatchObject({ interview: { status: InterviewStatus.REPORT_GENERATING }, task: { status: TaskStatus.QUEUED } });
@@ -38,12 +38,23 @@ describe('InterviewReportsService', () => {
     const prisma = { $transaction: (callback: any) => callback(tx), asyncTask: { update: vi.fn() } };
     await expect(new InterviewReportsService(prisma as never, { enqueue: vi.fn().mockRejectedValue(new Error('redis')) } as never).create('user', 'interview')).rejects.toMatchObject({ status: 503 });
     expect(prisma.asyncTask.update).not.toHaveBeenCalled();
-    expect(tx.interview.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.REPORT_GENERATING }) }));
+    expect(tx.interview.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.REPORT_GENERATING, completedAt: null }) }));
   });
 
-  it('hides foreign interviews and rejects lifecycle states other than SUBMITTED', async () => {
+  it('retries a FAILED interview by reusing it and creating one fresh active task', async () => {
+    const tx = transaction(InterviewStatus.FAILED);
+    const prisma = { $transaction: vi.fn((callback) => callback(tx)), asyncTask: { update: vi.fn().mockResolvedValue({}) } };
+    const queue = { enqueue: vi.fn().mockResolvedValue(undefined) };
+    const result = await new InterviewReportsService(prisma as never, queue as never).create('user', 'interview');
+    expect(tx.asyncTask.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { in: [TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.PROCESSING] } }) }));
+    expect(tx.asyncTask.create).toHaveBeenCalledOnce();
+    expect(tx.interview.update).toHaveBeenCalledWith({ where: { id: 'interview' }, data: { status: InterviewStatus.REPORT_GENERATING, failureCode: null, failureMessage: null, completedAt: null } });
+    expect(result).toMatchObject({ interview: { id: 'interview', status: InterviewStatus.REPORT_GENERATING }, task: { status: TaskStatus.QUEUED } });
+  });
+
+  it('hides foreign interviews and rejects lifecycle states other than SUBMITTED or FAILED', async () => {
     await expect(new InterviewReportsService({ $transaction: (callback: any) => callback(transaction(null)) } as never, {} as never).create('user', 'interview')).rejects.toMatchObject({ status: 404 });
-    for (const status of [InterviewStatus.READY, InterviewStatus.GENERATING, InterviewStatus.IN_PROGRESS, InterviewStatus.FAILED]) {
+    for (const status of [InterviewStatus.READY, InterviewStatus.GENERATING, InterviewStatus.IN_PROGRESS]) {
       await expect(new InterviewReportsService({ $transaction: (callback: any) => callback(transaction(status)) } as never, {} as never).create('user', 'interview')).rejects.toMatchObject({ status: 409 });
     }
   });

@@ -48,7 +48,7 @@ describe('TaskRecoveryService', () => {
     expect(tx.asyncTask.updateMany).toHaveBeenCalled(); expect(tx.interview.updateMany).not.toHaveBeenCalled();
   });
 
-  it('selects and republishes pending interview report tasks with taskId only', async () => {
+  it('recovers a pending interview report retry only after Redis publication succeeds', async () => {
     const row = { id: '8d73fbe6-0f0b-43fc-af01-81b0d7af76c4', type: TaskType.INTERVIEW_REPORT_GENERATION, codeReviewId: null };
     const tx = { $queryRaw: vi.fn().mockResolvedValue([row]), asyncTask: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } };
     const queue = { add: vi.fn().mockResolvedValue(undefined) };
@@ -56,5 +56,6 @@ describe('TaskRecoveryService', () => {
     const query = tx.$queryRaw.mock.calls[0]![0] as { strings: string[] };
     expect(query.strings.join('')).toContain('INTERVIEW_REPORT_GENERATION');
     expect(queue.add).toHaveBeenCalledWith(TaskType.INTERVIEW_REPORT_GENERATION, { taskId: row.id }, { jobId: row.id });
+    expect(tx.asyncTask.updateMany).toHaveBeenCalledWith({ where: { id: row.id, status: TaskStatus.PENDING, bullJobId: null }, data: { status: TaskStatus.QUEUED, bullJobId: row.id } });
   });
 });
