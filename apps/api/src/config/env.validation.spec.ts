@@ -21,6 +21,7 @@ describe('validateEnvironment', () => {
   it('accepts the approved auth configuration', () => {
     expect(validateEnvironment(validEnvironment)).toMatchObject({
       API_PORT: 3001,
+      REDIS_COMMAND_TIMEOUT_MS: 5000,
       JWT_ACCESS_TTL_SECONDS: 900,
       CORS_ALLOWED_ORIGINS: ['https://localhost:3000'],
     });
@@ -31,19 +32,18 @@ describe('validateEnvironment', () => {
     expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'http://localhost:3000' })).toThrow();
   });
 
-  it('accepts localhost HTTP only in development', () => {
+  it('accepts explicitly configured localhost and 127.0.0.1 HTTP ports only in development', () => {
     expect(validateEnvironment({
       ...validEnvironment,
       NODE_ENV: 'development',
-      CORS_ALLOWED_ORIGINS: 'http://localhost:3000,https://app.example.com',
+      CORS_ALLOWED_ORIGINS: 'http://localhost:4200,http://127.0.0.1:4200,https://app.example.com',
       AUTH_COOKIE_NAME: 'hirescope_refresh',
     })).toMatchObject({
-      CORS_ALLOWED_ORIGINS: ['http://localhost:3000', 'https://app.example.com'],
+      CORS_ALLOWED_ORIGINS: ['http://localhost:4200', 'http://127.0.0.1:4200', 'https://app.example.com'],
     });
     expect(() => validateEnvironment({
       ...validEnvironment,
-      NODE_ENV: 'development',
-      CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:4200',
     })).toThrow();
     expect(() => validateEnvironment({
       ...validEnvironment,
@@ -53,8 +53,21 @@ describe('validateEnvironment', () => {
     })).toThrow('AUTH_COOKIE_NAME must not use the __Secure- prefix');
   });
 
+  it('rejects non-origin URL forms and empty allowlist entries', () => {
+    expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'https://app.example.com/' })).toThrow();
+    expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'https://app.example.com/path' })).toThrow();
+    expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'https://app.example.com,' })).toThrow();
+  });
+
   it('rejects weak or shared token secrets', () => {
     expect(() => validateEnvironment({ ...validEnvironment, JWT_ACCESS_SECRET: 'short' })).toThrow();
     expect(() => validateEnvironment({ ...validEnvironment, AUTH_REFRESH_HASH_SECRET: validEnvironment.JWT_ACCESS_SECRET })).toThrow();
+  });
+
+  it('validates the Redis command timeout', () => {
+    expect(validateEnvironment({ ...validEnvironment, REDIS_COMMAND_TIMEOUT_MS: '2500' })).toMatchObject({
+      REDIS_COMMAND_TIMEOUT_MS: 2500,
+    });
+    expect(() => validateEnvironment({ ...validEnvironment, REDIS_COMMAND_TIMEOUT_MS: '0' })).toThrow();
   });
 });

@@ -22,19 +22,26 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
   const nodeEnv = typeof env.NODE_ENV === 'string' ? env.NODE_ENV : 'production';
   const origins = requiredString(env, 'CORS_ALLOWED_ORIGINS').split(',').map((value) => value.trim());
   const invalidOrigin = origins.some((origin) => {
-    if (origin === '*') return true;
-    const parsed = new URL(origin);
-    const isExactOrigin = parsed.origin === origin;
-    if (!isExactOrigin) return true;
-    if (parsed.protocol === 'https:') return false;
-    return !(nodeEnv === 'development' && origin === 'http://localhost:3000');
+    if (!origin || origin === '*') return true;
+    try {
+      const parsed = new URL(origin);
+      if (parsed.origin !== origin) return true;
+      if (parsed.protocol === 'https:') return false;
+      return !(
+        nodeEnv === 'development'
+        && parsed.protocol === 'http:'
+        && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+      );
+    } catch {
+      return true;
+    }
   });
   if (invalidOrigin) {
-    throw new Error('CORS_ALLOWED_ORIGINS must contain exact HTTPS origins, except http://localhost:3000 in development');
+    throw new Error('CORS_ALLOWED_ORIGINS must be an exact origin allowlist; development may use explicit HTTP localhost or 127.0.0.1 ports');
   }
 
   const cookieName = requiredString(env, 'AUTH_COOKIE_NAME');
-  if (nodeEnv === 'development' && origins.includes('http://localhost:3000') && cookieName.startsWith('__Secure-')) {
+  if (nodeEnv === 'development' && cookieName.startsWith('__Secure-')) {
     throw new Error('AUTH_COOKIE_NAME must not use the __Secure- prefix for localhost HTTP development');
   }
 
@@ -46,6 +53,7 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
   return {
     ...env,
     API_PORT: integer(env, 'API_PORT'),
+    REDIS_COMMAND_TIMEOUT_MS: integer({ value: env.REDIS_COMMAND_TIMEOUT_MS ?? '5000' }, 'value'),
     TRUST_PROXY_HOPS: integer({ value: env.TRUST_PROXY_HOPS ?? '0' }, 'value', 0),
     JWT_ACCESS_TTL_SECONDS: accessTtl,
     AUTH_REFRESH_TTL_SECONDS: integer(env, 'AUTH_REFRESH_TTL_SECONDS'),

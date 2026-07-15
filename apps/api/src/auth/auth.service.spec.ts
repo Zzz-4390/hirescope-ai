@@ -64,4 +64,17 @@ describe('AuthService', () => {
     expect((error as HttpException).getStatus()).toBe(503);
     expect(JSON.stringify((error as HttpException).getResponse())).not.toContain('redis connection details');
   });
+
+  it('returns a sanitized 503 when Redis logout is unavailable', async () => {
+    const service = new AuthService(
+      {} as never,
+      {} as never,
+      { logout: async () => { throw new Error('redis connection details'); } } as never,
+      {} as never,
+    );
+    const error = await service.logout('cookie').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+    expect(JSON.stringify((error as HttpException).getResponse())).not.toContain('redis connection details');
+  });
 });

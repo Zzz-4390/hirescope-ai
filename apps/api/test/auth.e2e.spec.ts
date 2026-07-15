@@ -14,12 +14,20 @@ describe('Auth API', () => {
   const email = 'auth-e2e@example.com';
   const username = 'auth_e2e_user';
   const password = 'StrongPassword123!';
-  const origin = 'https://localhost:3000';
+  const origin = 'https://localhost:4300';
+  const loopbackOrigin = 'https://127.0.0.1:4300';
 
   function setCookie(response: request.Response): string {
     const header = response.headers['set-cookie'];
     if (!Array.isArray(header) || !header[0]) throw new Error('Expected Set-Cookie header');
     return header[0];
+  }
+
+  function sessionId(cookie: string): string {
+    const value = cookie.split(';')[0]?.split('=')[1];
+    const id = value?.split('.')[0];
+    if (!id) throw new Error('Expected refresh session id');
+    return id;
   }
 
   beforeAll(async () => {
@@ -119,15 +127,44 @@ describe('Auth API', () => {
     expect(next.status).toBe(200);
   });
 
-  it('requires a trusted Origin or Referer for refresh and logout', async () => {
+  it('accepts both configured custom-port loopback origins and rejects untrusted or missing origins', async () => {
+    expect((await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', origin)).status).toBe(204);
+    expect((await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', loopbackOrigin)).status).toBe(204);
+    expect((await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', 'https://localhost:4301')).status).toBe(403);
+    expect((await request(app.getHttpServer()).post('/api/v1/auth/logout')).status).toBe(403);
+
     const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
     const cookie = setCookie(login).split(';')[0]!;
     expect((await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', cookie)).status).toBe(403);
     expect((await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', 'https://localhost:3000.evil.test').set('Cookie', cookie)).status).toBe(403);
     const logout = await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Referer', `${origin}/account`).set('Cookie', cookie);
     expect(logout.status).toBe(204);
-    expect(setCookie(logout)).toContain('Expires=Thu, 01 Jan 1970');
-    expect(setCookie(logout)).toContain('Secure');
+  });
+
+  it('revokes the Redis session, expires the matching cookie, and rejects the old cookie', async () => {
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
+    expect(login.status).toBe(200);
+    const cookie = setCookie(login).split(';')[0]!;
+    const redisKey = `auth:session:v1:${sessionId(cookie)}`;
+    expect(await redis.exists(redisKey)).toBe(1);
+
+    const logout = await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', origin).set('Cookie', cookie);
+    expect(logout.status).toBe(204);
+    const clearedCookie = setCookie(logout);
+    expect(clearedCookie).toContain('__Secure-hirescope_refresh=;');
+    expect(clearedCookie).toContain('Path=/api/v1/auth');
+    expect(clearedCookie).toContain('Expires=Thu, 01 Jan 1970');
+    expect(clearedCookie).toContain('HttpOnly');
+    expect(clearedCookie).toContain('Secure');
+    expect(clearedCookie).toContain('SameSite=Lax');
+    expect(await redis.exists(redisKey)).toBe(0);
+
+    const refresh = await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', origin).set('Cookie', cookie);
+    expect(refresh.status).toBe(401);
+
+    const repeatedLogout = await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', origin).set('Cookie', cookie);
+    expect(repeatedLogout.status).toBe(204);
+    expect(setCookie(repeatedLogout)).toContain('Expires=Thu, 01 Jan 1970');
   });
 
   it('rate limits a refresh with a missing cookie by IP before rotation', async () => {
