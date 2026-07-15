@@ -19,7 +19,7 @@ export class ProjectAnalysisProcessor {
     if (!task || task.type !== TaskType.PROJECT_ANALYSIS || !task.projectId || !task.project) throw new Error('TASK_NOT_FOUND');
     if (TERMINAL.has(task.status)) return;
     if (task.status === TaskStatus.PENDING) throw new Error('TASK_NOT_READY');
-    if (task.status === TaskStatus.QUEUED && !(await this.claim(task.id, task.projectId))) return;
+    if (task.status !== TaskStatus.QUEUED || !(await this.claim(task.id, task.projectId))) return;
     let target: string | undefined;
     try {
       if (!task.project.zipStoragePath) throw new AnalysisFailure('PROJECT_SOURCE_MISSING');

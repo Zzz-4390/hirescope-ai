@@ -20,7 +20,7 @@ export class InterviewReportProcessor {
     if (task.status === TaskStatus.SUCCEEDED) return;
     if (task.interview.report && task.interview.status === InterviewStatus.COMPLETED) return this.markSucceeded(task.id);
     if (task.status === TaskStatus.FAILED || task.status === TaskStatus.CANCELLED) return;
-    if (task.status !== TaskStatus.QUEUED && task.status !== TaskStatus.PROCESSING) throw new Error('TASK_NOT_READY');
+    if (task.status !== TaskStatus.QUEUED) return;
     if (!await this.claim(task.id, task.interviewId, task.projectId)) return;
 
     const questions = task.interview.questions.map((question) => ({ id: question.id, sequence: question.sequence, category: question.category, question: question.question, referencePoints: jsonStrings(question.referencePoints) }));
@@ -46,7 +46,7 @@ export class InterviewReportProcessor {
       if (deleting(locked.projectStatus)) { await cancel(tx, taskId); return false; }
       if (locked.interviewStatus === InterviewStatus.COMPLETED && locked.taskStatus === TaskStatus.SUCCEEDED) return false;
       if (locked.interviewStatus !== InterviewStatus.REPORT_GENERATING) { await failRows(tx, taskId, interviewId, 'INTERVIEW_REPORT_INPUT_INVALID'); return false; }
-      const claimed = await tx.asyncTask.updateMany({ where: { id: taskId, type: TaskType.INTERVIEW_REPORT_GENERATION, status: { in: [TaskStatus.QUEUED, TaskStatus.PROCESSING] } }, data: { status: TaskStatus.PROCESSING, progress: 5, attempts: { increment: 1 }, startedAt: new Date() } });
+      const claimed = await tx.asyncTask.updateMany({ where: { id: taskId, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.QUEUED }, data: { status: TaskStatus.PROCESSING, progress: 5, attempts: { increment: 1 }, startedAt: new Date() } });
       return claimed.count === 1;
     });
   }
