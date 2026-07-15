@@ -17,6 +17,7 @@ import { OpenAiCompatibleProvider, type OpenAiCompatibleProviderConfig } from '.
 import { AiInterviewQuestionService } from './interview/ai-interview-question.service';
 import type { InterviewQuestionGenerator } from './interview/interview-question-generator';
 import { AiCodeReviewService } from './code-review/ai-code-review.service';
+import { CodeReviewContextBuilder } from './code-review/code-review-context-builder';
 import type { CodeReviewGenerator } from './code-review/code-review-generator';
 
 export function createTaskHandler(prisma: PrismaClient, analysis: ProjectAnalysisProcessor, cleanup: ProjectCleanupProcessor, codeReview?: CodeReviewProcessor, interviewQuestions?: InterviewQuestionProcessor, interviewReports?: InterviewReportProcessor) {
@@ -72,7 +73,7 @@ export async function startWorkerRuntime(options: RuntimeOptions) {
   const paths = new StoragePathService(options.storageRoot);
   const analysis = new ProjectAnalysisProcessor(prisma, paths, new ZipExtractorService(options.limits), new ProjectAnalyzerService(options.limits.maxTextReadBytes));
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
-  const codeReview = new CodeReviewProcessor(prisma, createCodeReviewGenerator(prisma, options.ai));
+  const codeReview = new CodeReviewProcessor(prisma, createCodeReviewGenerator(prisma, options.ai), paths, new CodeReviewContextBuilder());
   const interviewQuestions = new InterviewQuestionProcessor(prisma, createInterviewQuestionGenerator(prisma, options.ai));
   const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
   const recovery = new TaskRecoveryService(prisma, queue, options.recoveryBatchSize);
