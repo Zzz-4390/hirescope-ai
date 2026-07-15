@@ -28,11 +28,11 @@ export class InterviewReportsService {
           if (!activeTask) throw this.notAllowed();
           return { interview: { id: interviewId, status: InterviewStatus.REPORT_GENERATING }, task: activeTask, publish: false };
         }
-        if (interview.status !== InterviewStatus.SUBMITTED) throw this.notAllowed();
+        if (interview.status !== InterviewStatus.SUBMITTED && interview.status !== InterviewStatus.FAILED) throw this.notAllowed();
         const existingTask = await tx.asyncTask.findFirst({ where: { interviewId, userId, type: TaskType.INTERVIEW_REPORT_GENERATION, status: { in: ACTIVE_TASK_STATUSES } }, select: taskSelect });
         if (existingTask) return { interview: { id: interviewId, status: InterviewStatus.REPORT_GENERATING }, task: existingTask, publish: false };
         const task = await tx.asyncTask.create({ data: { userId, projectId: interview.projectId, interviewId, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.PENDING }, select: taskSelect });
-        await tx.interview.update({ where: { id: interviewId }, data: { status: InterviewStatus.REPORT_GENERATING, failureCode: null, failureMessage: null } });
+        await tx.interview.update({ where: { id: interviewId }, data: { status: InterviewStatus.REPORT_GENERATING, failureCode: null, failureMessage: null, completedAt: null } });
         return { interview: { id: interviewId, status: InterviewStatus.REPORT_GENERATING }, task, publish: true };
       });
     } catch (error) {

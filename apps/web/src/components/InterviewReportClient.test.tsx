@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createInterviewReport, getInterview, getInterviewReport } from "../lib/interviews";
@@ -48,6 +49,24 @@ describe("InterviewReportClient", () => {
     expect(getTask).toHaveBeenCalledWith("task-1");
   });
 
+  it("retries a failed report once, disables the button, and resumes task polling", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getInterview)
+      .mockResolvedValueOnce(interview("FAILED"))
+      .mockResolvedValueOnce(interview("COMPLETED"));
+    vi.mocked(createInterviewReport).mockResolvedValue({ interview: { id: "interview-1", status: "REPORT_GENERATING" }, task: { id: "retry-task", type: "INTERVIEW_REPORT_GENERATION", status: "QUEUED", failure: null } });
+    vi.mocked(getTask).mockResolvedValue({ id: "retry-task", type: "INTERVIEW_REPORT_GENERATION", status: "SUCCEEDED", failure: null });
+    vi.mocked(getInterviewReport).mockResolvedValue({ status: "COMPLETED", report: report() });
+    render(<InterviewReportClient interviewId="interview-1" />);
+
+    const retry = await screen.findByRole("button", { name: "重新生成报告" });
+    await user.click(retry);
+    expect(retry).toBeDisabled();
+    expect(await screen.findByText("综合得分")).toBeInTheDocument();
+    expect(createInterviewReport).toHaveBeenCalledTimes(1);
+    expect(getTask).toHaveBeenCalledWith("retry-task");
+  });
+
   it("marks report failures with the report-specific themed panel", async () => {
     vi.mocked(getInterview).mockRejectedValue(new Error("报告服务暂不可用"));
     render(<InterviewReportClient interviewId="interview-1" />);
@@ -57,7 +76,7 @@ describe("InterviewReportClient", () => {
   });
 });
 
-function interview(status: "REPORT_GENERATING" | "COMPLETED") {
+function interview(status: "REPORT_GENERATING" | "COMPLETED" | "FAILED") {
   return {
     id: "interview-1", title: "模拟面试", status, difficulty: "MEDIUM" as const, questionCount: 1, currentIndex: 1,
     failure: null, startedAt: null, submittedAt: null, completedAt: null, createdAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z",
