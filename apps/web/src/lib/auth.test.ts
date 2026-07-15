@@ -124,4 +124,25 @@ describe("auth", () => {
     );
     expect(getAccessToken()).toBeNull();
   });
+
+  it("keeps local auth state when remote logout returns a non-2xx response", async () => {
+    saveAccessToken("token-123");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "请求来源不受信任" } }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(logout()).rejects.toThrow("请求来源不受信任");
+    expect(getAccessToken()).toBe("token-123");
+  });
+
+  it("keeps local auth state when remote logout is unavailable", async () => {
+    saveAccessToken("token-123");
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(logout()).rejects.toThrow("暂时无法连接认证服务，请稍后重试");
+    expect(getAccessToken()).toBe("token-123");
+  });
 });

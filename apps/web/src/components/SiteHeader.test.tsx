@@ -120,6 +120,37 @@ describe("SiteHeader", () => {
     });
   });
 
+  it("keeps the signed-in state and allows retry when remote logout fails", async () => {
+    localStorage.setItem("hirescope.accessToken", "token-123");
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "user-1", username: "candidate_01", email: "candidate@example.com" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "服务端会话未注销，请重试" } }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    render(<SiteHeader />);
+
+    const avatar = await screen.findByRole("button", { name: /candidate_01/ });
+    fireEvent.mouseEnter(avatar.parentElement as HTMLElement);
+    const logoutButton = screen.getAllByRole("menuitem").find((item) => item.tagName === "BUTTON" && !item.hasAttribute("aria-haspopup"));
+    expect(logoutButton).toBeDefined();
+    fireEvent.click(logoutButton!);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("服务端会话未注销，请重试");
+    expect(localStorage.getItem("hirescope.accessToken")).toBe("token-123");
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(navigation.refresh).not.toHaveBeenCalled();
+    expect(logoutButton).toBeEnabled();
+  });
+
   it("only marks login active on the login route", () => {
     render(<SiteHeader current="login" />);
 

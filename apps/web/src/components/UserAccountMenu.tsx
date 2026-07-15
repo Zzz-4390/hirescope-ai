@@ -24,6 +24,7 @@ export function UserAccountMenu({ user, avatarUrl = null, onLogoutError }: UserA
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const accountMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,12 +96,13 @@ export function UserAccountMenu({ user, avatarUrl = null, onLogoutError }: UserA
 
   async function handleLogout() {
     setIsLoggingOut(true);
+    setLogoutError("");
     try {
       await logout();
-      window.dispatchEvent(new Event("auth-change"));
       router.replace("/");
       router.refresh();
     } catch (cause) {
+      setLogoutError(cause instanceof Error ? cause.message : "退出登录失败，请稍后重试");
       setIsLoggingOut(false);
       onLogoutError?.(cause instanceof Error ? cause.message : "退出登录失败，请稍后重试");
     }
@@ -180,6 +182,7 @@ export function UserAccountMenu({ user, avatarUrl = null, onLogoutError }: UserA
           {isLoggingOut ? <RefreshCw className={styles.spinning} aria-hidden="true" /> : <LogOut aria-hidden="true" />}
           <span>{isLoggingOut ? "正在退出..." : "退出登录"}</span><ChevronRight aria-hidden="true" />
         </button>
+        {logoutError ? <p className={styles.logoutError} role="alert">{logoutError}</p> : null}
       </div>
     </div>
   );

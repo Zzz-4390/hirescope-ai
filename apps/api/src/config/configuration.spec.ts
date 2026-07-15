@@ -15,12 +15,12 @@ describe('authConfiguration', () => {
   it('uses non-secure cookies only in development', () => {
     process.env.NODE_ENV = 'development';
     process.env.AUTH_COOKIE_NAME = 'hirescope_refresh';
-    process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
+    process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:4200,http://127.0.0.1:4200';
 
     expect(authConfiguration()).toMatchObject({
       cookieName: 'hirescope_refresh',
       secureCookies: false,
-      allowedOrigins: ['http://localhost:3000'],
+      allowedOrigins: ['http://localhost:4200', 'http://127.0.0.1:4200'],
     });
   });
 

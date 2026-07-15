@@ -20,7 +20,15 @@ const root = resolve(__dirname, '../../..');
 const requiredRedisUrl = redisUrl;
 const testStorageRoot = resolve(root, 'storage/test-e2e');
 rmSync(testStorageRoot, { recursive: true, force: true });
-const environment = { ...process.env, NODE_ENV: 'test', DATABASE_URL: databaseUrl, REDIS_URL: redisUrl, STORAGE_ROOT: testStorageRoot };
+const environment = {
+  ...process.env,
+  NODE_ENV: 'test',
+  DATABASE_URL: databaseUrl,
+  REDIS_URL: redisUrl,
+  STORAGE_ROOT: testStorageRoot,
+  CORS_ALLOWED_ORIGINS: 'https://localhost:4300,https://127.0.0.1:4300',
+  AUTH_COOKIE_NAME: '__Secure-hirescope_refresh',
+};
 const command = 'pnpm';
 function run(args: string[]): void {
   const result = spawnSync(command, args, { cwd: root, env: environment, shell: process.platform === 'win32', stdio: 'inherit' });

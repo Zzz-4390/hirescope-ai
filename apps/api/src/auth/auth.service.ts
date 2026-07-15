@@ -60,8 +60,13 @@ export class AuthService {
     return { accessToken, expiresIn: 900, cookieValue: session.cookieValue };
   }
 
-  logout(cookieValue: string | undefined): Promise<void> {
-    return cookieValue ? this.sessions.logout(cookieValue) : Promise.resolve();
+  async logout(cookieValue: string | undefined): Promise<void> {
+    if (!cookieValue) return;
+    try {
+      await this.sessions.logout(cookieValue);
+    } catch {
+      throw new ServiceUnavailableException({ code: 'AUTH_SESSION_UNAVAILABLE', message: '认证服务暂时不可用' });
+    }
   }
 
   async me(userId: string) {

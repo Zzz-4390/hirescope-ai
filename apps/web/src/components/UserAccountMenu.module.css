@@ -9,6 +9,7 @@
 :global(html[data-theme="light"]) .themeOptionLight,:global(html[data-theme="dark"]) .themeOptionDark{background:var(--app-theme-selected);color:var(--app-theme-accent);font-weight:600}
 :global(html[data-theme="light"]) .themeOptionLight .themeCheck,:global(html[data-theme="dark"]) .themeOptionDark .themeCheck{opacity:1}
 .spinning{animation:spin .8s linear infinite}
+.logoutError{margin:6px 9px 4px;color:#b42318;font-size:12px;line-height:1.45}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:900px){.avatarButton{width:36px;height:36px;font-size:14px}.accountMenu:after{width:36px}}
 @media(max-width:620px){.themeSubmenu{top:4px;right:calc(100% + 8px);left:auto;transform-origin:top right}}
