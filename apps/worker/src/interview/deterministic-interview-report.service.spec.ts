@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DeterministicInterviewReportService } from './deterministic-interview-report.service';
+import { buildInterviewReportRubric, DeterministicInterviewReportService } from './deterministic-interview-report.service';
 
 const interview = { id: 'interview', questionCount: 2 };
 const questions = [
@@ -12,6 +12,17 @@ const answers = [
 ];
 
 describe('DeterministicInterviewReportService', () => {
+  it('converts reference points into a weighted Rubric with synonyms and judging criteria', () => {
+    const rubric = buildInterviewReportRubric(['Prisma 事务', 'userId 归属', 'BullMQ/Redis', '幂等和失败测试']);
+    expect(rubric.reduce((total, point) => total + point.weight, 0)).toBe(100);
+    expect(rubric).toEqual(expect.arrayContaining([
+      expect.objectContaining({ point: 'Prisma 事务', synonyms: expect.arrayContaining(['$transaction', '回滚']), criterion: expect.stringContaining('事务') }),
+      expect.objectContaining({ point: 'userId 归属', synonyms: expect.arrayContaining(['ownership', '资源归属']), criterion: expect.stringContaining('userId') }),
+      expect.objectContaining({ point: 'BullMQ/Redis', synonyms: expect.arrayContaining(['消息队列', '分布式缓存']), criterion: expect.stringContaining('BullMQ') }),
+      expect.objectContaining({ point: '幂等和失败测试', synonyms: expect.arrayContaining(['idempotency', 'failure test']), criterion: expect.stringContaining('重复') }),
+    ]));
+  });
+
   it('scores semantic equivalents for Redis, BullMQ, transactions, authorization and idempotency with answer-only evidence', () => {
     const answer = 'We use a distributed cache backed by Redis. BullMQ runs the background queue. The write uses an ACID transaction and rollback. RBAC enforces authorization. An idempotency key deduplicates repeated requests.';
     const report = new DeterministicInterviewReportService().generate(
@@ -33,6 +44,39 @@ describe('DeterministicInterviewReportService', () => {
     expect(first).toMatchObject({ model: 'deterministic-interview-report-v1', questionReviews: [{ questionId: 'q1', sequence: 1 }, { questionId: 'q2', sequence: 2 }] });
     expect(first.strengths.length).toBeGreaterThan(0);
     expect(first.improvements.length).toBeGreaterThan(0);
+  });
+
+  it('scores semantic answers about NestJS, Prisma, ownership, queues, idempotency and failure tests instead of returning 0/4', () => {
+    const answer = [
+      'NestJS guards validate the authenticated caller before the controller runs.',
+      'Several Prisma writes are wrapped in $transaction so an exception rolls every write back.',
+      'Every resource query includes the current userId to enforce ownership.',
+      'BullMQ publishes background jobs and Redis stores the queue state for workers.',
+      'An idempotency key deduplicates repeated requests before side effects run.',
+      'Integration tests mock timeouts and assert the failure path leaves no partial record.',
+    ].join(' ');
+    const report = new DeterministicInterviewReportService().generate(
+      { id: 'engineering', questionCount: 1 },
+      [{ id: 'q', sequence: 1, category: 'reliability', question: 'How are framework, data and task boundaries implemented?', referencePoints: ['NestJS', 'Prisma 事务', 'userId 归属', 'BullMQ/Redis', '幂等', '失败测试'] }],
+      [{ questionId: 'q', content: answer }],
+    );
+    expect(report.questionReviews[0]).toMatchObject({ score: 100, matchedReferencePoints: 6, totalReferencePoints: 6 });
+    expect(report.questionReviews[0]!.rubric?.every((point) => point.evidence.every((evidence) => answer.includes(evidence)))).toBe(true);
+  });
+
+  it('keeps keyword stuffing, empty, off-topic and very short answers low', () => {
+    const service = new DeterministicInterviewReportService();
+    const question = [{ id: 'q', sequence: 1, question: 'Explain the reliability design.', referencePoints: ['NestJS', 'Prisma 事务', 'userId 归属', 'BullMQ', 'Redis', '幂等', '失败测试'] }];
+    const scores = [
+      'NestJS Prisma transaction userId BullMQ Redis idempotency failure tests.',
+      '',
+      'I like building software and learning new tools.',
+      'Redis.',
+    ].map((content) => service.generate({ id: 'low', questionCount: 1 }, question, [{ questionId: 'q', content }]).questionReviews[0]!.score);
+    expect(scores[0]).toBeLessThanOrEqual(20);
+    expect(scores[1]).toBe(0);
+    expect(scores[2]).toBe(0);
+    expect(scores[3]).toBeLessThanOrEqual(25);
   });
 
   it('matches reference points case-insensitively and clamps all scores', () => {
