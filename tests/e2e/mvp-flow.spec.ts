@@ -118,6 +118,7 @@ test("MVP 主流程可恢复、可重试且跨会话持久化", async ({ page, c
   await expect(page.locator(".report-status")).toHaveText("报告已完成");
   await expect(page.locator(".report-generating-panel")).toHaveCount(0);
 
+  await installScreenshotStyles(page);
   await setTheme(page, "light");
   await expect(page.locator(".report-overview-panel")).toHaveScreenshot("interview-report-light.png");
   await setTheme(page, "dark");
@@ -125,17 +126,19 @@ test("MVP 主流程可恢复、可重试且跨会话持久化", async ({ page, c
 
   await seedFailedReportState(interviewId);
   await page.reload();
+  await installScreenshotStyles(page);
   await setTheme(page, "light");
   await expect(page.getByRole("heading", { name: "报告暂不可用" })).toBeVisible();
   const retryButton = page.getByRole("button", { name: "重新生成报告" });
   await expect(retryButton).toBeVisible();
-  await expect(page.locator(".interview-report-page")).toHaveScreenshot("interview-report-retry-failed.png");
+  await expect(page.locator(".interview-report-error-panel")).toHaveScreenshot("interview-report-retry-failed.png");
   const retryResponse = await clickAndWaitForApi(page, "POST", `/api/v1/interviews/${interviewId}/report`, () => retryButton.click());
   expect(retryResponse.status()).toBe(202);
   await expect.poll(() => apiStatus(page, `/interviews/${interviewId}`), { timeout: 90_000 }).toBe("COMPLETED");
   await page.reload();
   await expect(page.locator(".report-status")).toHaveText("报告已完成");
   await expect(page.locator(".report-generating-panel")).toHaveCount(0);
+  await installScreenshotStyles(page);
   await expect(page.locator(".report-overview-panel")).toHaveScreenshot("interview-report-light.png");
 
   const refreshCookie = (await context.cookies(`${baseURL}/api/v1/auth/refresh`))
@@ -233,6 +236,12 @@ async function setTheme(page: Page, theme: "light" | "dark") {
     window.localStorage.setItem("hirescope-theme", value);
   }, theme);
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+}
+
+async function installScreenshotStyles(page: Page) {
+  await page.addStyleTag({
+    content: ".report-overview-panel{height:192px!important}.interview-report-error-panel{height:220px!important}",
+  });
 }
 
 async function seedFailedReportState(interviewId: string) {
