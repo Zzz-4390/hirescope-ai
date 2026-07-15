@@ -33,6 +33,7 @@ export class AiProviderError extends Error {
 interface CompletionRequest {
   systemPrompt: string;
   userPrompt: string;
+  temperature?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -70,7 +71,7 @@ export class OpenAiCompatibleProvider {
             { role: 'user', content: request.userPrompt },
           ],
           response_format: { type: 'json_object' },
-          temperature: 0.2,
+          temperature: request.temperature ?? 0.2,
         }),
         signal: controller.signal,
       });
