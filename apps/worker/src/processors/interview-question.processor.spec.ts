@@ -59,9 +59,23 @@ describe('InterviewQuestionProcessor', () => {
 
   it('fails closed when no real project evidence can be built', async () => {
     const { processor, tx, contextBuilder, generator } = setup();
-    contextBuilder.build.mockResolvedValue({ ...EVIDENCE, evidencePaths: [] });
+    contextBuilder.build.mockResolvedValue({ ...EVIDENCE, snippets: [], evidencePaths: [] });
     await processor.process('task');
     expect(generator.generate).not.toHaveBeenCalled();
+    expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ failureCode: 'INTERVIEW_QUESTION_EVIDENCE_MISSING' }) }));
+  });
+
+  it('does not treat configuration files as source-code evidence', async () => {
+    const { processor, tx, contextBuilder, generator } = setup();
+    contextBuilder.build.mockResolvedValue({
+      ...EVIDENCE,
+      directoryTree: [{ path: 'package.json', type: 'file' }],
+      snippets: [{ path: 'package.json', content: '{"scripts":{"test":"vitest"}}', truncated: false }],
+      evidencePaths: ['package.json'],
+    });
+    await processor.process('task');
+    expect(generator.generate).not.toHaveBeenCalled();
+    expect(tx.interviewQuestion.createMany).not.toHaveBeenCalled();
     expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ failureCode: 'INTERVIEW_QUESTION_EVIDENCE_MISSING' }) }));
   });
 

@@ -42,13 +42,13 @@ describe('DeterministicInterviewQuestionService', () => {
     expect(JSON.stringify(first)).not.toContain('Redis');
   });
 
-  it('uses real test, entry, and config evidence without exposing full paths in question text', () => {
+  it('uses only real source-code evidence without exposing full paths in question text', () => {
     const generated = new DeterministicInterviewQuestionService().generate(analysis, null, 3, InterviewDifficulty.HARD, undefined, evidence);
-    expect(generated.questions.map((question) => question.category)).toEqual(['测试策略', '启动流程', '工程配置']);
+    expect(generated.questions.map((question) => question.category)).toEqual(['启动流程', '测试策略', '启动流程']);
     expect(generated.questions.map((question) => question.evidencePaths[0])).toEqual([
+      'apps/api/src/main.ts',
       'apps/api/test/interviews.spec.ts',
       'apps/api/src/main.ts',
-      'apps/api/package.json',
     ]);
     expect(generated.questions.every((question) => !question.question.includes('apps/api/'))).toBe(true);
   });

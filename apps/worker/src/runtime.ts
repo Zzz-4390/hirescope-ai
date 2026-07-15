@@ -11,8 +11,9 @@ import { DeterministicCodeReviewService } from './code-review/deterministic-code
 import { CodeReviewProcessor } from './processors/code-review.processor';
 import { DeterministicInterviewQuestionService } from './interview/deterministic-interview-question.service';
 import { InterviewQuestionProcessor } from './processors/interview-question.processor';
-import { DeterministicInterviewReportService } from './interview/deterministic-interview-report.service';
 import { InterviewReportProcessor } from './processors/interview-report.processor';
+import { AiInterviewReportService } from './interview/ai-interview-report.service';
+import { DeterministicInterviewReportGenerator, type InterviewReportGenerator } from './interview/interview-report-generator';
 import { OpenAiCompatibleProvider, type OpenAiCompatibleProviderConfig } from './ai/openai-compatible.provider';
 import { AiInterviewQuestionService } from './interview/ai-interview-question.service';
 import type { InterviewQuestionGenerator } from './interview/interview-question-generator';
@@ -65,6 +66,16 @@ export function createCodeReviewGenerator(prisma: PrismaClient, config?: OpenAiC
   });
 }
 
+export function createInterviewReportGenerator(prisma: PrismaClient, config?: OpenAiCompatibleProviderConfig): InterviewReportGenerator {
+  if (!config) return new DeterministicInterviewReportGenerator();
+  const provider = new OpenAiCompatibleProvider(config);
+  return new AiInterviewReportService(provider, {
+    async record(entry) {
+      await prisma.aiCallLog.create({ data: entry });
+    },
+  });
+}
+
 export async function startWorkerRuntime(options: RuntimeOptions) {
   const prisma = new PrismaClient();
   await prisma.$connect();
@@ -75,7 +86,7 @@ export async function startWorkerRuntime(options: RuntimeOptions) {
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
   const codeReview = new CodeReviewProcessor(prisma, createCodeReviewGenerator(prisma, options.ai), paths, new CodeReviewContextBuilder());
   const interviewQuestions = new InterviewQuestionProcessor(prisma, createInterviewQuestionGenerator(prisma, options.ai), paths, new CodeReviewContextBuilder());
-  const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
+  const interviewReports = new InterviewReportProcessor(prisma, createInterviewReportGenerator(prisma, options.ai));
   const recovery = new TaskRecoveryService(prisma, queue, options.recoveryBatchSize);
   const worker = new Worker(options.queueName ?? TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions, interviewReports), { connection, concurrency: 2 });
   worker.on('failed', (job) => console.error(`Worker job failed: ${job?.id ?? 'unknown'}`));

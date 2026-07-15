@@ -44,6 +44,13 @@ export const InterviewQuestionsResultSchema = z.object({ questions: z.array(Inte
 export type InterviewQuestionsResult = z.infer<typeof InterviewQuestionsResultSchema>;
 
 const InterviewReportScoreSchema = z.number().int().min(0).max(100);
+export const InterviewRubricPointSchema = z.object({
+  point: z.string().min(1),
+  weight: z.number().int().positive().max(100),
+  score: InterviewReportScoreSchema,
+  matched: z.boolean(),
+  evidence: z.array(z.string().min(1)),
+}).strict().refine((point) => point.score <= point.weight, { message: 'rubric point score cannot exceed weight' });
 export const InterviewReportDimensionsSchema = z.object({
   projectUnderstanding: InterviewReportScoreSchema,
   technicalAccuracy: InterviewReportScoreSchema,
@@ -63,7 +70,14 @@ export const InterviewQuestionReviewSchema = z.object({
   improvedAnswerExample: z.string().min(1),
   matchedReferencePoints: z.number().int().nonnegative(),
   totalReferencePoints: z.number().int().nonnegative(),
-}).strict().refine((review) => review.matchedReferencePoints <= review.totalReferencePoints, { message: 'matchedReferencePoints cannot exceed totalReferencePoints' });
+  // Optional for previously persisted v1 reports; all newly generated reports include both fields.
+  rubric: z.array(InterviewRubricPointSchema).min(1).optional(),
+  answerEvidence: z.array(z.string().min(1)).optional(),
+}).strict()
+  .refine((review) => review.matchedReferencePoints <= review.totalReferencePoints, { message: 'matchedReferencePoints cannot exceed totalReferencePoints' })
+  .refine((review) => !review.rubric || review.rubric.reduce((total, point) => total + point.weight, 0) === 100, { message: 'rubric weights must total 100' })
+  .refine((review) => !review.rubric || review.rubric.reduce((total, point) => total + point.score, 0) === review.score, { message: 'question score must equal rubric total' })
+  .refine((review) => !review.rubric || review.rubric.every((point) => point.matched === (point.evidence.length > 0)), { message: 'rubric evidence must match state' });
 export const InterviewReportResultSchema = z.object({
   overallScore: InterviewReportScoreSchema,
   summary: z.string().min(1),

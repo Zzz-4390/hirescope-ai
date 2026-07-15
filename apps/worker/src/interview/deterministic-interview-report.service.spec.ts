@@ -12,6 +12,20 @@ const answers = [
 ];
 
 describe('DeterministicInterviewReportService', () => {
+  it('scores semantic equivalents for Redis, BullMQ, transactions, authorization and idempotency with answer-only evidence', () => {
+    const answer = 'We use a distributed cache backed by Redis. BullMQ runs the background queue. The write uses an ACID transaction and rollback. RBAC enforces authorization. An idempotency key deduplicates repeated requests.';
+    const report = new DeterministicInterviewReportService().generate(
+      { id: 'semantic', questionCount: 1 },
+      [{ id: 'q', sequence: 1, question: 'Describe reliability controls.', referencePoints: ['Redis', 'BullMQ', '事务', '权限', '幂等'] }],
+      [{ questionId: 'q', content: answer }],
+    );
+    const review = report.questionReviews[0]!;
+    expect(review.score).toBe(100);
+    expect(review.coveredPoints).toEqual(['Redis', 'BullMQ', '事务', '权限', '幂等']);
+    expect((review.answerEvidence ?? []).every((evidence) => answer.includes(evidence))).toBe(true);
+    expect(review.rubric?.every((point) => point.score <= point.weight && point.evidence.every((evidence) => answer.includes(evidence)))).toBe(true);
+  });
+
   it('generates the same complete report for the same input', () => {
     const service = new DeterministicInterviewReportService();
     const first = service.generate(interview, questions, answers);

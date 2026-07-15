@@ -1,6 +1,7 @@
 import type { InterviewQuestionsResult } from '@hirescope/shared-types';
 import type { InterviewDifficulty } from '@prisma/client';
 import { posix } from 'node:path';
+import { interviewQuestionEvidencePaths } from './interview-question-evidence';
 import type { InterviewAnalysisInput, InterviewQuestionEvidenceContext } from './interview-question-generator';
 
 type EvidenceKind = 'config' | 'entry' | 'test' | 'module';
@@ -39,19 +40,11 @@ export class DeterministicInterviewQuestionService {
 
 function evidenceCandidates(evidence?: InterviewQuestionEvidenceContext): Array<{ path: string; kind: EvidenceKind }> {
   if (!evidence) return [];
-  const ordered = [
-    ...evidence.testFiles.map((path) => ({ path, kind: 'test' as const })),
-    ...evidence.entryFiles.map((path) => ({ path, kind: 'entry' as const })),
-    ...evidence.configFiles.map((path) => ({ path, kind: 'config' as const })),
-    ...evidence.snippets.map(({ path }) => ({ path, kind: 'module' as const })),
-    ...evidence.evidencePaths.map((path) => ({ path, kind: 'module' as const })),
-  ];
-  const seen = new Set<string>();
-  return ordered.filter(({ path }) => {
-    if (!evidence.evidencePaths.includes(path) || seen.has(path)) return false;
-    seen.add(path);
-    return true;
-  });
+  const allowedPaths = new Set(interviewQuestionEvidencePaths(evidence));
+  return [...allowedPaths].map((path) => ({
+    path,
+    kind: evidence.testFiles.includes(path) ? 'test' : evidence.entryFiles.includes(path) ? 'entry' : 'module',
+  }));
 }
 
 function groundedQuestion(kind: EvidenceKind, subject: string, difficulty: InterviewDifficulty, technology?: string) {

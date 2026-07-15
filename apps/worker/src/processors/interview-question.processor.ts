@@ -1,7 +1,7 @@
 import { InterviewQuestionsResultSchema } from '@hirescope/shared-types';
 import { InterviewStatus, Prisma, PrismaClient, ProjectStatus, TaskStatus, TaskType } from '@prisma/client';
 import { InterviewQuestionGenerationError } from '../interview/ai-interview-question.service';
-import { validateInterviewQuestionEvidence } from '../interview/interview-question-evidence';
+import { restrictInterviewQuestionEvidence, validateInterviewQuestionEvidence } from '../interview/interview-question-evidence';
 import type { InterviewQuestionEvidenceContext, InterviewQuestionGenerator } from '../interview/interview-question-generator';
 import { CodeReviewContextBuilder } from '../code-review/code-review-context-builder';
 import { StoragePathService } from '../storage/storage-path.service';
@@ -43,7 +43,7 @@ export class InterviewQuestionProcessor {
     let evidence: InterviewQuestionEvidenceContext;
     try {
       if (!task.project.extractStoragePath || !this.paths || !this.contextBuilder) throw new Error('INTERVIEW_QUESTION_EVIDENCE_MISSING');
-      evidence = await this.contextBuilder.build(this.paths.resolveStoredPath(task.project.extractStoragePath), task.project.analysis);
+      evidence = restrictInterviewQuestionEvidence(await this.contextBuilder.build(this.paths.resolveStoredPath(task.project.extractStoragePath), task.project.analysis));
       if (evidence.evidencePaths.length === 0) throw new Error('INTERVIEW_QUESTION_EVIDENCE_MISSING');
     } catch {
       return this.fail(task.id, task.interviewId, 'INTERVIEW_QUESTION_EVIDENCE_MISSING');

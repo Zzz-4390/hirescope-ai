@@ -20,6 +20,8 @@ import { DeterministicInterviewQuestionService } from '../src/interview/determin
 import { InterviewQuestionProcessor } from '../src/processors/interview-question.processor';
 import { DeterministicInterviewReportService } from '../src/interview/deterministic-interview-report.service';
 import { InterviewReportProcessor } from '../src/processors/interview-report.processor';
+import { AiInterviewReportService } from '../src/interview/ai-interview-report.service';
+import { AiProviderError } from '../src/ai/openai-compatible.provider';
 
 async function createZip(path: string, entries: Record<string, string>) {
   const zip = new ZipFile();
@@ -142,7 +144,7 @@ describe('Project Analysis Worker integration', () => {
   });
 
   it('consumes INTERVIEW_QUESTION_GENERATION and remains idempotent', async () => {
-    await queue.drain(true); const projectId = randomUUID(); const extractStoragePath = `projects/${userId}/${projectId}/extracted`; const extractRoot = paths.resolveStoredPath(extractStoragePath); await mkdir(join(extractRoot, 'src'), { recursive: true }); await mkdir(join(extractRoot, 'test'), { recursive: true }); await writeFile(join(extractRoot, 'src', 'main.ts'), 'export async function bootstrap() { return true; }'); await writeFile(join(extractRoot, 'test', 'main.spec.ts'), 'describe("bootstrap", () => {});'); const project = await prisma.project.create({ data: { id: projectId, userId, name: 'Interview Queue E2E', originalFileName: 'source.zip', extractStoragePath, fileSize: 4n, fileHash: '3'.repeat(64), status: ProjectStatus.COMPLETED, analysis: { create: { summary: 'Analyzed', techStack: [{ name: 'TypeScript', category: 'language' }], directoryTree: [{ path: 'src/main.ts', type: 'file' }, { path: 'test/main.spec.ts', type: 'file' }], coreModules: [{ name: 'API', path: 'src', description: 'API' }], entryFiles: ['src/main.ts'], statistics: { totalFiles: 2, totalLines: 2, languages: { TypeScript: 2 } }, analyzerVersion: 'deterministic-v1' } } } });
+    await queue.drain(true); const projectId = randomUUID(); const extractStoragePath = `projects/${userId}/${projectId}/extracted`; const extractRoot = paths.resolveStoredPath(extractStoragePath); await mkdir(join(extractRoot, 'src'), { recursive: true }); await mkdir(join(extractRoot, 'test'), { recursive: true }); await writeFile(join(extractRoot, 'package.json'), '{"scripts":{"test":"vitest"}}'); await writeFile(join(extractRoot, 'src', 'main.ts'), 'export async function bootstrap() { return true; }'); await writeFile(join(extractRoot, 'test', 'main.spec.ts'), 'describe("bootstrap", () => {});'); const project = await prisma.project.create({ data: { id: projectId, userId, name: 'Interview Queue E2E', originalFileName: 'source.zip', extractStoragePath, fileSize: 4n, fileHash: '3'.repeat(64), status: ProjectStatus.COMPLETED, analysis: { create: { summary: 'Analyzed', techStack: [{ name: 'TypeScript', category: 'language' }], directoryTree: [{ path: 'package.json', type: 'file' }, { path: 'src/main.ts', type: 'file' }, { path: 'test/main.spec.ts', type: 'file' }], coreModules: [{ name: 'API', path: 'src', description: 'API' }], entryFiles: ['src/main.ts'], statistics: { totalFiles: 3, totalLines: 2, languages: { TypeScript: 2 } }, analyzerVersion: 'deterministic-v1' } } } });
     const interview = await prisma.interview.create({ data: { userId, projectId: project.id, title: 'MEDIUM 模拟面试', status: 'GENERATING', difficulty: 'MEDIUM', questionCount: 8 } }); const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, interviewId: interview.id, type: TaskType.INTERVIEW_QUESTION_GENERATION, status: TaskStatus.QUEUED } });
     const connection = redisConnection(process.env.REDIS_URL!); const events = new QueueEvents(TASK_QUEUE_NAME, { connection }); await events.waitUntilReady(); const worker = new Worker(TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions), { connection }); await worker.waitUntilReady();
     try { const job = await queue.add(TaskType.INTERVIEW_QUESTION_GENERATION, { taskId: task.id }, { jobId: task.id }); await job.waitUntilFinished(events, 15_000); await interviewQuestions.process(task.id); expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: 'READY' }); expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 }); const questions = await prisma.interviewQuestion.findMany({ where: { interviewId: interview.id }, orderBy: { sequence: 'asc' } }); expect(questions).toHaveLength(8); expect(questions.map((value) => value.sequence)).toEqual([1,2,3,4,5,6,7,8]); expect(questions.every((value) => { const metadata = value.referencePoints as { evidencePaths?: string[] }; return metadata.evidencePaths?.every((path) => ['src/main.ts', 'test/main.spec.ts'].includes(path)); })).toBe(true); }
@@ -158,7 +160,24 @@ describe('Project Analysis Worker integration', () => {
     expect(await prisma.interviewReport.count({ where: { interviewId: interview.id } })).toBe(1);
     expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: InterviewStatus.COMPLETED, completedAt: expect.any(Date) });
     expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 });
-    expect(await prisma.interviewReport.findUnique({ where: { interviewId: interview.id } })).toMatchObject({ model: 'deterministic-interview-report-v1', overallScore: expect.any(Number) });
+    const report = await prisma.interviewReport.findUnique({ where: { interviewId: interview.id } });
+    expect(report).toMatchObject({ model: 'deterministic-interview-report-v1', overallScore: 100 });
+    const reviews = report!.questionReviews as Array<{ score: number; coveredPoints: string[]; missedPoints: string[]; rubric: Array<{ score: number; weight: number; evidence: string[] }>; answerEvidence: string[] }>;
+    expect(reviews).toHaveLength(5);
+    expect(reviews.every((review) => review.score === review.rubric.reduce((total, point) => total + point.score, 0) && review.rubric.reduce((total, point) => total + point.weight, 0) === 100 && review.coveredPoints.length > 0 && review.missedPoints.length === 0 && review.answerEvidence.length > 0)).toBe(true);
+  });
+
+  it('persists an explainable report and completes the task when the AI Judge is unavailable', async () => {
+    const project = await prisma.project.create({ data: { userId, name: 'Fallback Report', originalFileName: 'fallback.zip', fileSize: 4n, fileHash: '6'.repeat(64), status: ProjectStatus.COMPLETED } });
+    const interview = await prisma.interview.create({ data: { userId, projectId: project.id, title: 'Fallback', status: InterviewStatus.REPORT_GENERATING, difficulty: InterviewDifficulty.MEDIUM, questionCount: 5, submittedAt: new Date(), questions: { create: Array.from({ length: 5 }, (_, index) => ({ sequence: index + 1, category: 'reliability', difficulty: InterviewDifficulty.MEDIUM, question: 'How do you make writes idempotent?', referencePoints: ['幂等'] })) } }, include: { questions: true } });
+    await prisma.interviewAnswer.createMany({ data: interview.questions.map((question) => ({ userId, interviewId: interview.id, questionId: question.id, content: 'We use an idempotency key to deduplicate repeated write requests.' })) });
+    const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.QUEUED } });
+    const unavailableProvider = { providerName: 'openai-compatible', model: 'offline', completeJson: async () => { throw new AiProviderError('AI_UPSTREAM_ERROR', 1, 500); } };
+    const fallbackProcessor = new InterviewReportProcessor(prisma, new AiInterviewReportService(unavailableProvider as never, { record: async () => undefined }));
+    await fallbackProcessor.process(task.id);
+    const report = await prisma.interviewReport.findUnique({ where: { interviewId: interview.id } });
+    expect(report?.questionReviews).toEqual(Array.from({ length: 5 }, () => expect.objectContaining({ score: 100, coveredPoints: expect.arrayContaining(['幂等']), answerEvidence: ['We use an idempotency key to deduplicate repeated write requests.'] })));
+    expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.SUCCEEDED, progress: 100 });
   });
 
   it('recovers a pending interview report task with taskId-only payload', async () => {

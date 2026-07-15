@@ -81,5 +81,12 @@ async function lockInterview(tx: Prisma.TransactionClient, userId: string, inter
 }
 function publicReport(report: Record<string, unknown>) {
   const { id, overallScore, summary, dimensions, questionReviews, strengths, improvements, model, createdAt } = report;
-  return { id, overallScore, summary, dimensions, questionReviews, strengths, improvements, model, createdAt };
+  const publicQuestionReviews = Array.isArray(questionReviews)
+    ? questionReviews.map((review) => {
+      if (!review || typeof review !== 'object' || Array.isArray(review)) return review;
+      const { rubric: _rubric, answerEvidence: _answerEvidence, ...publicReview } = review as Record<string, unknown>;
+      return publicReview;
+    })
+    : questionReviews;
+  return { id, overallScore, summary, dimensions, questionReviews: publicQuestionReviews, strengths, improvements, model, createdAt };
 }
