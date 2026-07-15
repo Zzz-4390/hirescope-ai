@@ -3,8 +3,34 @@ import type { CodeReviewResult } from '@hirescope/shared-types';
 export interface CodeReviewAnalysisInput {
   summary?: unknown;
   techStack: unknown;
+  directoryTree?: unknown;
   coreModules: unknown;
+  entryFiles?: unknown;
   statistics: unknown;
+}
+
+export interface CodeReviewEvidenceSnippet {
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
+export interface CodeReviewEvidenceContext {
+  techStack: unknown;
+  directoryTree: Array<{ path: string; type: 'file' | 'directory' }>;
+  testFiles: string[];
+  entryFiles: string[];
+  coreModules: unknown[];
+  configFiles: string[];
+  snippets: CodeReviewEvidenceSnippet[];
+  evidencePaths: string[];
+  budget: {
+    maxFileChars: number;
+    maxSnippetChars: number;
+    maxContextChars: number;
+    usedSnippetChars: number;
+    usedContextChars: number;
+  };
 }
 
 export interface CodeReviewGenerationContext {
@@ -21,5 +47,5 @@ export interface GeneratedCodeReview {
 }
 
 export interface CodeReviewGenerator {
-  review(analysis: CodeReviewAnalysisInput, context: CodeReviewGenerationContext): GeneratedCodeReview | Promise<GeneratedCodeReview>;
+  review(analysis: CodeReviewAnalysisInput, context: CodeReviewGenerationContext, evidence?: CodeReviewEvidenceContext): GeneratedCodeReview | Promise<GeneratedCodeReview>;
 }
