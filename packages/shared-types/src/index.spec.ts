@@ -28,9 +28,10 @@ describe('CodeReviewResultSchema', () => {
 
 describe('InterviewQuestionsResultSchema', () => {
   it('accepts strict sequential interview questions', () => {
-    const result = { questions: [{ sequence: 1, category: 'architecture', difficulty: 'MEDIUM', question: 'How is the API structured?', referencePoints: ['module boundaries'] }] };
+    const result = { questions: [{ sequence: 1, category: 'architecture', difficulty: 'MEDIUM', question: 'How is the API structured?', referencePoints: ['module boundaries'], evidencePaths: ['src/api.ts'] }] };
     expect(InterviewQuestionsResultSchema.safeParse(result).success).toBe(true);
     expect(InterviewQuestionsResultSchema.safeParse({ questions: [{ ...result.questions[0], internal: true }] }).success).toBe(false);
+    expect(InterviewQuestionsResultSchema.safeParse({ questions: [{ ...result.questions[0], evidencePaths: [] }] }).success).toBe(false);
   });
 });
 
