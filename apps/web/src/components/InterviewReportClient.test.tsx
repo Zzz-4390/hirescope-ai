@@ -25,6 +25,10 @@ describe("InterviewReportClient", () => {
 
     expect(await screen.findByText("综合得分")).toBeInTheDocument();
     expect(screen.getByText("项目理解")).toBeInTheDocument();
+    expect(screen.getByText("AI 总结")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "优势" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "改进建议", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "逐题评价" })).toBeInTheDocument();
     expect(screen.getByText("回答覆盖主要参考要点。")).toBeInTheDocument();
     expect(screen.getByText("已覆盖要点")).toBeInTheDocument();
     expect(screen.getByText("参考改进回答")).toBeInTheDocument();
@@ -42,6 +46,14 @@ describe("InterviewReportClient", () => {
     expect(await screen.findByText("回答覆盖主要参考要点。")).toBeInTheDocument();
     expect(createInterviewReport).toHaveBeenCalledWith("interview-1");
     expect(getTask).toHaveBeenCalledWith("task-1");
+  });
+
+  it("marks report failures with the report-specific themed panel", async () => {
+    vi.mocked(getInterview).mockRejectedValue(new Error("报告服务暂不可用"));
+    render(<InterviewReportClient interviewId="interview-1" />);
+
+    const alertMessage = await screen.findByText("报告服务暂不可用");
+    expect(alertMessage.closest(".interview-report-error-panel")).toHaveClass("empty-panel");
   });
 });
 
