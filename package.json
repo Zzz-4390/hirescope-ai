@@ -22,16 +22,21 @@
     "worker:start": "pnpm --filter @hirescope/worker start",
     "worker:dev": "tsx --tsconfig apps/worker/tsconfig.json --env-file=.env apps/worker/src/main.ts",
     "infra:up": "docker compose up -d postgres redis",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "test:e2e": "tsx --env-file=.env tests/e2e/run-e2e-tests.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.0.0",
+    "@types/yazl": "^2.4.5",
+    "ioredis": "^5.11.1",
     "prisma": "6.19.0",
     "tsx": "^4.0.0",
     "typescript": "5.9.3",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "yazl": "^3.3.1"
   }
 }
