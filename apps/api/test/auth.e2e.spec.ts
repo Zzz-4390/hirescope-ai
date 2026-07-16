@@ -6,6 +6,23 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApplication } from '../src/bootstrap';
+import { ObjectStorageService, type ObjectUpload } from '../src/object-storage/object-storage.service';
+
+class InMemoryObjectStorage extends ObjectStorageService {
+  readonly objects = new Map<string, Buffer>();
+
+  async upload(input: ObjectUpload): Promise<void> {
+    this.objects.set(input.objectKey, Buffer.from(input.content));
+  }
+
+  async delete(objectKey: string): Promise<void> {
+    this.objects.delete(objectKey);
+  }
+
+  async createSignedReadUrl(objectKey: string): Promise<string> {
+    return `https://private-oss.example/${encodeURIComponent(objectKey)}?signed=short-lived`;
+  }
+}
 
 describe('Auth API', () => {
   let app: INestApplication;
@@ -16,6 +33,7 @@ describe('Auth API', () => {
   const password = 'StrongPassword123!';
   const origin = 'https://localhost:4300';
   const loopbackOrigin = 'https://127.0.0.1:4300';
+  const objectStorage = new InMemoryObjectStorage();
 
   function setCookie(response: request.Response): string {
     const header = response.headers['set-cookie'];
@@ -31,7 +49,10 @@ describe('Auth API', () => {
   }
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ObjectStorageService)
+      .useValue(objectStorage)
+      .compile();
     app = moduleRef.createNestApplication();
     configureApplication(app);
     await app.init();
@@ -98,6 +119,53 @@ describe('Auth API', () => {
     const emailLogin = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email.toUpperCase(), password });
     expect(emailLogin.status).toBe(200);
     expect(emailLogin.body.user).toMatchObject({ username, email });
+  });
+
+  it('uploads the current user avatar and returns a short-lived URL from /auth/me', async () => {
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const image = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+
+    const upload = await request(app.getHttpServer())
+      .put('/api/v1/auth/me/avatar')
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .field('userId', '00000000-0000-4000-8000-000000000000')
+      .attach('file', image, { filename: 'avatar.png', contentType: 'image/png' });
+
+    expect(upload.status).toBe(200);
+    expect(upload.body.avatarUrl).toMatch(/^https:\/\/private-oss\.example\/avatars%2F/);
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(stored.avatarObjectKey).toMatch(new RegExp(`^avatars/${user.id}/[0-9a-f-]+\\.png$`));
+    expect(objectStorage.objects.has(stored.avatarObjectKey!)).toBe(true);
+
+    const me = await request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${login.body.accessToken}`);
+    expect(me.status).toBe(200);
+    expect(me.body.avatarUrl).toContain(encodeURIComponent(stored.avatarObjectKey!));
+    expect(me.body.avatarObjectKey).toBeUndefined();
+  });
+
+  it('never lets a user select or modify another user avatar', async () => {
+    const otherEmail = 'avatar-other@example.com';
+    const otherUsername = 'avatar_other_user';
+    await request(app.getHttpServer()).post('/api/v1/auth/register').send({
+      username: otherUsername,
+      email: otherEmail,
+      password,
+      confirmPassword: password,
+    });
+    const other = await prisma.user.findUniqueOrThrow({ where: { email: otherEmail } });
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
+    const image = Buffer.from([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]);
+
+    const upload = await request(app.getHttpServer())
+      .put('/api/v1/auth/me/avatar')
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .field('userId', other.id)
+      .attach('file', image, { filename: 'avatar.webp', contentType: 'image/webp' });
+
+    expect(upload.status).toBe(200);
+    expect((await prisma.user.findUniqueOrThrow({ where: { email } })).avatarObjectKey).toMatch(/^avatars\//);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: other.id } })).avatarObjectKey).toBeNull();
   });
 
   it('rotates refresh tokens once and leaves the new session valid after stale reuse', async () => {
@@ -179,6 +247,32 @@ describe('Auth API', () => {
     expect(allowed.headers['access-control-allow-credentials']).toBe('true');
     const denied = await request(app.getHttpServer()).options('/api/v1/auth/login').set('Origin', `${origin}.evil.test`).set('Access-Control-Request-Method', 'POST');
     expect(denied.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('changes the password, revokes every session, and rejects old credentials and refresh tokens', async () => {
+    const firstLogin = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
+    const secondLogin = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
+    const oldCookie = setCookie(firstLogin).split(';')[0]!;
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect((await redis.keys('auth:session:v1:*')).length).toBeGreaterThanOrEqual(2);
+
+    const changed = await request(app.getHttpServer())
+      .post('/api/v1/auth/password')
+      .set('Authorization', `Bearer ${secondLogin.body.accessToken}`)
+      .set('Cookie', setCookie(secondLogin).split(';')[0]!)
+      .send({ currentPassword: password, newPassword: 'NewStrongPassword456!', confirmPassword: 'NewStrongPassword456!' });
+
+    expect(changed.status).toBe(204);
+    expect(setCookie(changed)).toContain('__Secure-hirescope_refresh=;');
+    expect(await redis.keys(`auth:user-sessions:v1:${user.id}`)).toHaveLength(0);
+    const remainingSessionKeys = await redis.keys('auth:session:v1:*');
+    for (const key of remainingSessionKeys) {
+      expect(await redis.hget(key, 'userId')).not.toBe(user.id);
+    }
+    const staleRefresh = await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', origin).set('Cookie', oldCookie);
+    expect(staleRefresh.status).toBe(401);
+    expect((await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password })).status).toBe(401);
+    expect((await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password: 'NewStrongPassword456!' })).status).toBe(200);
   });
 
   it('does not expose extra application routes', async () => {

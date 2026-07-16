@@ -13,8 +13,17 @@ vi.mock("next/navigation", () => ({
 describe("LoginForm", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     push.mockReset();
     vi.restoreAllMocks();
+  });
+
+  it("shows the one-time password change success notice", () => {
+    sessionStorage.setItem("hirescope.loginNotice", "密码修改成功，请重新登录");
+    render(<LoginForm />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("密码修改成功，请重新登录");
+    expect(sessionStorage.getItem("hirescope.loginNotice")).toBeNull();
   });
 
   it("toggles password visibility", async () => {

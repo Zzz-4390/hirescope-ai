@@ -12,6 +12,7 @@ export interface CurrentUser {
   username: string;
   email: string;
   displayName?: string | null;
+  avatarUrl: string | null;
 }
 
 interface LoginResponse {
@@ -56,6 +57,24 @@ export async function register(input: RegisterInput): Promise<{ accepted: true }
 
 export function getCurrentUser(): Promise<CurrentUser> {
   return apiRequest<CurrentUser>("/auth/me");
+}
+
+export function uploadAvatar(file: File): Promise<CurrentUser> {
+  const body = new FormData();
+  body.append("file", file);
+  return apiRequest<CurrentUser>("/auth/me/avatar", { method: "PUT", body });
+}
+
+export async function changePassword(input: {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}): Promise<void> {
+  await apiRequest<void>("/auth/password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  clearAccessToken();
 }
 
 export async function logout(): Promise<void> {

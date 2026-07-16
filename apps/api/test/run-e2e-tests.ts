@@ -28,6 +28,11 @@ const environment = {
   STORAGE_ROOT: testStorageRoot,
   CORS_ALLOWED_ORIGINS: 'https://localhost:4300,https://127.0.0.1:4300',
   AUTH_COOKIE_NAME: '__Secure-hirescope_refresh',
+  OSS_ACCESS_KEY_ID: 'test-access-key-id',
+  OSS_ACCESS_KEY_SECRET: 'test-access-key-secret-value',
+  OSS_BUCKET: 'hirescope-test-private',
+  OSS_REGION: 'oss-cn-hangzhou',
+  OSS_SIGNED_URL_TTL_SECONDS: '900',
 };
 const command = 'pnpm';
 function run(args: string[]): void {

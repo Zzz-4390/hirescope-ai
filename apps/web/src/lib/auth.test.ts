@@ -8,6 +8,8 @@ import {
   logout,
   register,
   saveAccessToken,
+  changePassword,
+  uploadAvatar,
 } from "./auth";
 
 describe("auth", () => {
@@ -110,6 +112,35 @@ describe("auth", () => {
       username: "candidate_01",
       email: "candidate@example.com",
     });
+  });
+
+  it("uploads an avatar as multipart data", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "user-1", avatarUrl: "https://signed.example/avatar.png" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const file = new File(["avatar"], "avatar.png", { type: "image/png" });
+
+    await expect(uploadAvatar(file)).resolves.toMatchObject({ avatarUrl: "https://signed.example/avatar.png" });
+    const [, options] = fetchMock.mock.calls[0]!;
+    expect(fetchMock.mock.calls[0]![0]).toBe("/api/v1/auth/me/avatar");
+    expect(options).toMatchObject({ method: "PUT", body: expect.any(FormData) });
+    expect((options?.headers as Headers).has("Content-Type")).toBe(false);
+  });
+
+  it("changes the password and clears the access token only after success", async () => {
+    saveAccessToken("token-123");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+
+    await changePassword({ currentPassword: "current-password", newPassword: "new-password", confirmPassword: "new-password" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/password",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(getAccessToken()).toBeNull();
   });
 
   it("logs out remotely and clears the access token", async () => {

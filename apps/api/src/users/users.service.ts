@@ -14,7 +14,29 @@ export class UsersService {
   findPublicById(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, username: true, email: true, displayName: true, createdAt: true },
+      select: { id: true, username: true, email: true, displayName: true, avatarObjectKey: true, createdAt: true },
+    });
+  }
+
+  findCredentialsById(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, passwordHash: true },
+    });
+  }
+
+  updateAvatarObjectKey(id: string, avatarObjectKey: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: { avatarObjectKey },
+      select: { id: true, username: true, email: true, displayName: true, avatarObjectKey: true, createdAt: true },
+    });
+  }
+
+  updatePasswordIfCurrentHash(id: string, currentPasswordHash: string, passwordHash: string) {
+    return this.prisma.user.updateMany({
+      where: { id, passwordHash: currentPasswordHash },
+      data: { passwordHash },
     });
   }
 

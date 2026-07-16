@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TrustedOriginGuard } from '../common/security/trusted-origin.guard';
 import { RedisService } from '../redis/redis.service';
+import { ObjectStorageModule } from '../object-storage/object-storage.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AUTH_CONFIG, AUTH_RATE_LIMIT_SERVICE, PASSWORD_SERVICE, SESSION_SERVICE, TOKEN_SERVICE } from './auth.constants';
@@ -16,7 +17,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { authConfiguration } from '../config/configuration';
 
 @Module({
-  imports: [UsersModule, PassportModule.register({ defaultStrategy: 'jwt' })],
+  imports: [UsersModule, ObjectStorageModule, PassportModule.register({ defaultStrategy: 'jwt' })],
   controllers: [AuthController],
   providers: [
     AuthService,
@@ -35,7 +36,12 @@ import { authConfiguration } from '../config/configuration';
       provide: SESSION_SERVICE,
       inject: [RedisService, AUTH_CONFIG],
       useFactory: (redis: RedisService, config: ReturnType<typeof authConfiguration>) =>
-        new SessionService(redis, { hashSecret: config.refreshHashSecret, ttlSeconds: config.refreshTtlSeconds, keyPrefix: 'auth:session:v1:' }),
+        new SessionService(redis, {
+          hashSecret: config.refreshHashSecret,
+          ttlSeconds: config.refreshTtlSeconds,
+          keyPrefix: 'auth:session:v1:',
+          userKeyPrefix: 'auth:user-sessions:v1:',
+        }),
     },
     {
       provide: TOKEN_SERVICE,

@@ -60,17 +60,12 @@ export function AppShell({ children }: AppShellProps) {
   const activeNavHref = getActiveNavHref(pathname);
 
   useEffect(() => {
-    return () => {
-      if (avatarUrl) URL.revokeObjectURL(avatarUrl);
-    };
-  }, [avatarUrl]);
-
-  useEffect(() => {
     let mounted = true;
     getCurrentUser()
       .then((currentUser) => {
         if (!mounted) return;
         setUser(currentUser);
+        setAvatarUrl(currentUser.avatarUrl);
         setError("");
       })
       .catch(() => {
@@ -111,8 +106,9 @@ export function AppShell({ children }: AppShellProps) {
     if (pathname !== "/app") router.push(`/app/projects/${projectId}`);
   }
 
-  function handleAvatarFile(file: File | null) {
-    setAvatarUrl(file ? URL.createObjectURL(file) : null);
+  function handleAvatarUrl(nextAvatarUrl: string | null) {
+    setAvatarUrl(nextAvatarUrl);
+    setUser((currentUser) => currentUser ? { ...currentUser, avatarUrl: nextAvatarUrl } : currentUser);
   }
 
   if (isChecking) {
@@ -126,7 +122,7 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <AppUserContext.Provider value={user}>
-      <AppAvatarContext.Provider value={{ avatarUrl, setAvatarFile: handleAvatarFile }}>
+      <AppAvatarContext.Provider value={{ avatarUrl, setAvatarUrl: handleAvatarUrl }}>
       <AppProjectContext.Provider value={{ selectedProjectId, selectProject: handleProjectSelect }}>
         <div className={`${styles.shell} app-authenticated-shell`}>
           <header className={styles.primaryHeader}>

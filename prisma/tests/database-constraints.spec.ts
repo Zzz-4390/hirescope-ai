@@ -71,6 +71,16 @@ describe('database constraints', () => {
     });
   });
 
+  it('stores only an optional OSS avatar object key on the user', async () => {
+    const objectKey = `avatars/${userId}/${randomUUID()}.webp`;
+    await expect(prisma.user.update({ where: { id: userId }, data: { avatarObjectKey: objectKey } })).resolves.toMatchObject({
+      avatarObjectKey: objectKey,
+    });
+    await expect(prisma.user.update({ where: { id: userId }, data: { avatarObjectKey: null } })).resolves.toMatchObject({
+      avatarObjectKey: null,
+    });
+  });
+
   it('rejects non-normalized email', async () => {
     await expect(
       prisma.user.create({
