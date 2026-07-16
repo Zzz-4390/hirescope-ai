@@ -12,6 +12,9 @@ export function workerConfig(env: NodeJS.ProcessEnv = process.env) {
     queueName: env.TASK_QUEUE_NAME ?? TASK_QUEUE_NAME,
     recoveryIntervalMs: positive(env.TASK_RECOVERY_INTERVAL_MS, 30_000),
     recoveryBatchSize: positive(env.TASK_RECOVERY_BATCH_SIZE, 100),
+    recoveryQueuedTimeoutMs: positive(env.TASK_RECOVERY_QUEUED_TIMEOUT_MS, 60_000),
+    recoveryProcessingTimeoutMs: positive(env.TASK_RECOVERY_PROCESSING_TIMEOUT_MS, 300_000),
+    recoveryMaxAttempts: positive(env.TASK_RECOVERY_MAX_ATTEMPTS, 3),
     limits: extractionLimitsFromEnv(env),
     ai: aiConfig(env),
   };

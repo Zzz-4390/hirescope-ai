@@ -5,7 +5,14 @@ const REQUIRED = { DATABASE_URL: 'postgresql://localhost/test', REDIS_URL: 'redi
 
 describe('workerConfig AI provider', () => {
   it('falls back to deterministic questions when all AI variables are absent', () => {
-    expect(workerConfig(REQUIRED).ai).toBeUndefined();
+    const config = workerConfig(REQUIRED);
+    expect(config.ai).toBeUndefined();
+    expect(config).toMatchObject({ recoveryQueuedTimeoutMs: 60_000, recoveryProcessingTimeoutMs: 300_000, recoveryMaxAttempts: 3 });
+  });
+
+  it('loads recovery limits from the environment', () => {
+    expect(workerConfig({ ...REQUIRED, TASK_RECOVERY_QUEUED_TIMEOUT_MS: '10', TASK_RECOVERY_PROCESSING_TIMEOUT_MS: '20', TASK_RECOVERY_MAX_ATTEMPTS: '4' }))
+      .toMatchObject({ recoveryQueuedTimeoutMs: 10, recoveryProcessingTimeoutMs: 20, recoveryMaxAttempts: 4 });
   });
 
   it('loads a complete OpenAI-compatible provider configuration', () => {
