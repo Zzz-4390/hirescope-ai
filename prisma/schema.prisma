@@ -56,6 +56,7 @@ model User {
   email            String            @unique @db.VarChar(320)
   passwordHash     String            @map("password_hash") @db.VarChar(255)
   displayName      String?           @map("display_name") @db.VarChar(100)
+  avatarObjectKey  String?           @map("avatar_object_key") @db.VarChar(512)
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   projects         Project[]

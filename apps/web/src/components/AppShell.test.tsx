@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "./AppShell";
+import { useAppAvatar } from "./AppUserContext";
 
 const navigation = vi.hoisted(() => ({
   pathname: "/app/projects",
@@ -54,6 +55,7 @@ describe("AppShell", () => {
       username: "candidate_01",
       email: "candidate@example.com",
       displayName: "测试用户",
+      avatarUrl: null,
     });
     auth.logout.mockReset();
     auth.logout.mockResolvedValue(undefined);
@@ -151,6 +153,28 @@ describe("AppShell", () => {
     expect(screen.getByRole("menuitem", { name: "个人中心" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "主题颜色" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "退出登录" })).toBeInTheDocument();
+  });
+
+  it("synchronizes an updated avatar URL into the top account menu", async () => {
+    auth.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      username: "candidate_01",
+      email: "candidate@example.com",
+      displayName: null,
+      avatarUrl: "https://signed.example/old.png",
+    });
+
+    function AvatarUpdater() {
+      const { setAvatarUrl } = useAppAvatar();
+      return <button type="button" onClick={() => setAvatarUrl("https://signed.example/new.png")}>同步头像</button>;
+    }
+
+    render(<AppShell><AvatarUpdater /></AppShell>);
+    const avatar = await screen.findByRole("button", { name: "candidate_01的用户菜单" });
+    expect(avatar.querySelector("img")).toHaveAttribute("src", "https://signed.example/old.png");
+
+    fireEvent.click(screen.getByRole("button", { name: "同步头像" }));
+    expect(avatar.querySelector("img")).toHaveAttribute("src", "https://signed.example/new.png");
   });
 
   it("delays hover close and cancels it when the pointer returns", async () => {

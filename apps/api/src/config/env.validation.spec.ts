@@ -15,6 +15,10 @@ const validEnvironment = {
   AUTH_REGISTER_WINDOW_SECONDS: '3600', AUTH_REGISTER_MAX_REQUESTS: '5',
   AUTH_LOGIN_WINDOW_SECONDS: '900', AUTH_LOGIN_MAX_REQUESTS: '10',
   AUTH_REFRESH_WINDOW_SECONDS: '300', AUTH_REFRESH_MAX_REQUESTS: '30',
+  OSS_ACCESS_KEY_ID: 'replace_with_oss_access_key_id',
+  OSS_ACCESS_KEY_SECRET: 'replace_with_oss_access_key_secret',
+  OSS_BUCKET: 'replace-with-private-bucket', OSS_REGION: 'oss-cn-hangzhou',
+  OSS_SIGNED_URL_TTL_SECONDS: '900',
 };
 
 describe('validateEnvironment', () => {
@@ -24,6 +28,7 @@ describe('validateEnvironment', () => {
       REDIS_COMMAND_TIMEOUT_MS: 5000,
       JWT_ACCESS_TTL_SECONDS: 900,
       CORS_ALLOWED_ORIGINS: ['https://localhost:3000'],
+      OSS_SIGNED_URL_TTL_SECONDS: 900,
     });
   });
 
@@ -69,5 +74,16 @@ describe('validateEnvironment', () => {
       REDIS_COMMAND_TIMEOUT_MS: 2500,
     });
     expect(() => validateEnvironment({ ...validEnvironment, REDIS_COMMAND_TIMEOUT_MS: '0' })).toThrow();
+  });
+
+  it('validates private OSS connection settings and signed URL lifetime', () => {
+    expect(validateEnvironment(validEnvironment)).toMatchObject({
+      OSS_BUCKET: 'replace-with-private-bucket',
+      OSS_REGION: 'oss-cn-hangzhou',
+      OSS_SIGNED_URL_TTL_SECONDS: 900,
+    });
+    expect(() => validateEnvironment({ ...validEnvironment, OSS_REGION: 'cn-hangzhou' })).toThrow();
+    expect(() => validateEnvironment({ ...validEnvironment, OSS_BUCKET: 'Invalid_Bucket' })).toThrow();
+    expect(() => validateEnvironment({ ...validEnvironment, OSS_SIGNED_URL_TTL_SECONDS: '3601' })).toThrow();
   });
 });

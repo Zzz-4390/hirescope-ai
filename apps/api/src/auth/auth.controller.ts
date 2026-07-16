@@ -1,10 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, Put, Req, Res, UnprocessableEntityException, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { TrustedOriginGuard } from '../common/security/trusted-origin.guard';
 import { DtoValidationPipe } from '../common/validation/dto-validation.pipe';
 import { AuthService } from './auth.service';
+import { AvatarUploadInterceptor } from './avatar-upload.interceptor';
 import { AUTH_CONFIG, AUTH_RATE_LIMIT_SERVICE, SESSION_SERVICE, type AuthConfig } from './auth.constants';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -67,6 +69,28 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.auth.me(user.userId);
+  }
+
+  @Put('me/avatar')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(AvatarUploadInterceptor())
+  uploadAvatar(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw new UnprocessableEntityException({ code: 'AVATAR_REQUIRED', message: '请选择要上传的头像文件' });
+    }
+    return this.auth.uploadAvatar(user.userId, file);
+  }
+
+  @Post('password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new DtoValidationPipe(ChangePasswordDto)) dto: ChangePasswordDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    await this.auth.changePassword(user.userId, dto.currentPassword, dto.newPassword);
+    response.clearCookie(this.config.cookieName, this.cookieOptions());
   }
 
   private setRefreshCookie(response: Response, value: string): void {

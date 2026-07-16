@@ -12,6 +12,12 @@ function integer(env: Environment, name: string, minimum = 1): number {
   return value;
 }
 
+function integerInRange(env: Environment, name: string, minimum: number, maximum: number): number {
+  const value = integer(env, name, minimum);
+  if (value > maximum) throw new Error(`${name} is invalid`);
+  return value;
+}
+
 export function validateEnvironment(env: Environment): Record<string, unknown> {
   const jwtSecret = requiredString(env, 'JWT_ACCESS_SECRET');
   const refreshSecret = requiredString(env, 'AUTH_REFRESH_HASH_SECRET');
@@ -50,6 +56,20 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
   const accessTtl = integer(env, 'JWT_ACCESS_TTL_SECONDS');
   if (accessTtl !== 900) throw new Error('JWT_ACCESS_TTL_SECONDS must be 900');
 
+  const ossAccessKeyId = requiredString(env, 'OSS_ACCESS_KEY_ID');
+  const ossAccessKeySecret = requiredString(env, 'OSS_ACCESS_KEY_SECRET');
+  const ossBucket = requiredString(env, 'OSS_BUCKET');
+  const ossRegion = requiredString(env, 'OSS_REGION');
+  if (ossAccessKeyId.length < 8 || ossAccessKeySecret.length < 16) {
+    throw new Error('OSS credentials are invalid');
+  }
+  if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(ossBucket)) {
+    throw new Error('OSS_BUCKET is invalid');
+  }
+  if (!/^oss-[a-z0-9-]+$/.test(ossRegion)) {
+    throw new Error('OSS_REGION is invalid');
+  }
+
   return {
     ...env,
     API_PORT: integer(env, 'API_PORT'),
@@ -66,6 +86,11 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
     AUTH_LOGIN_MAX_REQUESTS: integer(env, 'AUTH_LOGIN_MAX_REQUESTS'),
     AUTH_REFRESH_WINDOW_SECONDS: integer(env, 'AUTH_REFRESH_WINDOW_SECONDS'),
     AUTH_REFRESH_MAX_REQUESTS: integer(env, 'AUTH_REFRESH_MAX_REQUESTS'),
+    OSS_ACCESS_KEY_ID: ossAccessKeyId,
+    OSS_ACCESS_KEY_SECRET: ossAccessKeySecret,
+    OSS_BUCKET: ossBucket,
+    OSS_REGION: ossRegion,
+    OSS_SIGNED_URL_TTL_SECONDS: integerInRange(env, 'OSS_SIGNED_URL_TTL_SECONDS', 60, 3600),
     CORS_ALLOWED_ORIGINS: origins,
   };
 }

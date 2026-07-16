@@ -68,7 +68,7 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
         </nav>
         <div className="header-actions">
           {user ? (
-            <UserAccountMenu user={user} />
+            <UserAccountMenu user={user} avatarUrl={user.avatarUrl} />
           ) : (
             <Link className={current === "login" ? "active" : ""} href="/login">登录</Link>
           )}

@@ -15,6 +15,7 @@ export function LoginForm() {
   const [rememberAccount, setRememberAccount] = useState(() => Boolean(getRememberedIdentifier()));
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
   const [error, setError] = useState("");
+  const [notice] = useState(() => takeLoginNotice());
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,6 +90,7 @@ export function LoginForm() {
       </div>
       <div className="form-message-slot">
         {error ? <p className="form-message error" role="alert">{error}</p> : null}
+        {!error && notice ? <p className="form-message success" role="status">{notice}</p> : null}
         {status === "success" ? <p className="form-message success">登录成功，正在进入工作台</p> : null}
       </div>
       <button className="submit-button" type="submit" disabled={status !== "idle"}>
@@ -103,6 +105,13 @@ export function LoginForm() {
       </p>
     </form>
   );
+}
+
+function takeLoginNotice(): string {
+  if (typeof window === "undefined") return "";
+  const message = sessionStorage.getItem("hirescope.loginNotice") ?? "";
+  sessionStorage.removeItem("hirescope.loginNotice");
+  return message;
 }
 
 function getRememberedIdentifier(): string {

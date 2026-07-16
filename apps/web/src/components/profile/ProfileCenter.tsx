@@ -1,13 +1,16 @@
 "use client";
 
 import { KeyRound, LockKeyhole, Palette, Settings2, Upload, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
 
+import { changePassword, uploadAvatar } from "../../lib/auth";
 import { useAppAvatar, useAppUser } from "../AppUserContext";
 import styles from "./ProfileCenter.module.css";
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ACCEPTED_AVATAR_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
 type ProfileSection = "profile" | "security" | "preferences";
 
@@ -27,11 +30,14 @@ function UserAvatar({ className, url, name }: { className: string; url: string |
 
 export function ProfileCenter() {
   const user = useAppUser();
-  const { avatarUrl, setAvatarFile } = useAppAvatar();
+  const { avatarUrl, setAvatarUrl } = useAppAvatar();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeSection, setActiveSection] = useState<ProfileSection>("profile");
   const [avatarMessage, setAvatarMessage] = useState("");
   const [avatarError, setAvatarError] = useState("");
+  const [selectedAvatar, setSelectedAvatar] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   const username = user?.username || user?.email?.split("@")[0] || "用户";
   const email = user?.email || "—";
@@ -45,28 +51,49 @@ export function ProfileCenter() {
     return () => window.removeEventListener("hashchange", syncSectionFromHash);
   }, []);
 
+  useEffect(() => () => {
+    if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+  }, [avatarPreviewUrl]);
+
   function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     setAvatarMessage("");
     setAvatarError("");
     if (!file) return;
-    if (!ACCEPTED_AVATAR_TYPES.has(file.type)) {
+    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (!ACCEPTED_AVATAR_TYPES.has(file.type) || !ACCEPTED_AVATAR_EXTENSIONS.has(extension)) {
+      setSelectedAvatar(null);
+      setAvatarPreviewUrl(null);
       setAvatarError("请选择 JPG、PNG 或 WebP 格式的图片");
       return;
     }
     if (file.size > MAX_AVATAR_BYTES) {
+      setSelectedAvatar(null);
+      setAvatarPreviewUrl(null);
       setAvatarError("头像文件不能超过 5MB");
       return;
     }
-    setAvatarFile(file);
-    setAvatarMessage("头像已更新，并同步到当前页面与顶部导航");
+    setSelectedAvatar(file);
+    setAvatarPreviewUrl(URL.createObjectURL(file));
   }
 
-  function handleRemoveAvatar() {
-    setAvatarFile(null);
+  async function handleAvatarUpload() {
+    if (!selectedAvatar || isUploadingAvatar) return;
+    setIsUploadingAvatar(true);
+    setAvatarMessage("");
     setAvatarError("");
-    setAvatarMessage("头像已移除");
+    try {
+      const updatedUser = await uploadAvatar(selectedAvatar);
+      setAvatarUrl(updatedUser.avatarUrl);
+      setSelectedAvatar(null);
+      setAvatarPreviewUrl(null);
+      setAvatarMessage("头像上传成功，已同步到个人中心与顶部导航");
+    } catch (cause) {
+      setAvatarError(cause instanceof Error ? cause.message : "头像上传失败，请稍后重试");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
   }
 
   return (
@@ -103,12 +130,14 @@ export function ProfileCenter() {
             <ProfileDetails
               username={username}
               email={email}
-              avatarUrl={avatarUrl}
+              avatarUrl={avatarPreviewUrl ?? avatarUrl}
               avatarMessage={avatarMessage}
               avatarError={avatarError}
+              selectedAvatarName={selectedAvatar?.name ?? ""}
+              isUploadingAvatar={isUploadingAvatar}
               fileInputRef={fileInputRef}
               onAvatarChange={handleAvatarChange}
-              onRemoveAvatar={handleRemoveAvatar}
+              onAvatarUpload={handleAvatarUpload}
             />
           ) : activeSection === "security" ? (
             <SecuritySettings />
@@ -127,12 +156,25 @@ interface ProfileDetailsProps {
   avatarUrl: string | null;
   avatarMessage: string;
   avatarError: string;
+  selectedAvatarName: string;
+  isUploadingAvatar: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAvatarChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onRemoveAvatar: () => void;
+  onAvatarUpload: () => Promise<void>;
 }
 
-function ProfileDetails({ username, email, avatarUrl, avatarMessage, avatarError, fileInputRef, onAvatarChange, onRemoveAvatar }: ProfileDetailsProps) {
+function ProfileDetails({
+  username,
+  email,
+  avatarUrl,
+  avatarMessage,
+  avatarError,
+  selectedAvatarName,
+  isUploadingAvatar,
+  fileInputRef,
+  onAvatarChange,
+  onAvatarUpload,
+}: ProfileDetailsProps) {
   return (
     <>
       <header className={styles.heading}>
@@ -154,13 +196,19 @@ function ProfileDetails({ username, email, avatarUrl, avatarMessage, avatarError
               accept="image/jpeg,image/png,image/webp"
               onChange={onAvatarChange}
             />
-            <button className={styles.uploadAvatarButton} type="button" onClick={() => fileInputRef.current?.click()}>
+            <button className={styles.selectAvatarButton} type="button" disabled={isUploadingAvatar} onClick={() => fileInputRef.current?.click()}>
               <Upload aria-hidden="true" />
-              上传新头像
+              {selectedAvatarName ? "重新选择" : "选择新头像"}
             </button>
-            <button className={styles.removeAvatarButton} type="button" disabled={!avatarUrl} onClick={onRemoveAvatar}>
-              移除头像
+            <button
+              className={styles.uploadAvatarButton}
+              type="button"
+              disabled={!selectedAvatarName || isUploadingAvatar}
+              onClick={() => { void onAvatarUpload(); }}
+            >
+              {isUploadingAvatar ? "上传中..." : "上传头像"}
             </button>
+            {selectedAvatarName ? <span className={styles.selectedFileName}>已选择：{selectedAvatarName}</span> : null}
             <span className={styles.formatHint}>支持 JPG、PNG、WebP，最大 5MB</span>
             {avatarMessage ? <span className={styles.successMessage} role="status">{avatarMessage}</span> : null}
             {avatarError ? <span className={styles.errorMessage} role="alert">{avatarError}</span> : null}
@@ -194,8 +242,38 @@ function ProfileDetails({ username, email, avatarUrl, avatarMessage, avatarError
 }
 
 function SecuritySettings() {
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  const router = useRouter();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSubmitting) return;
+    setError("");
+    if (newPassword.length < 6 || newPassword.length > 128) {
+      setError("新密码长度必须为 6 到 128 个字符");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("两次输入的新密码不一致");
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setError("新密码不能与当前密码相同");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await changePassword({ currentPassword, newPassword, confirmPassword });
+      sessionStorage.setItem("hirescope.loginNotice", "密码修改成功，请重新登录");
+      router.replace("/login");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "密码修改失败，请稍后重试");
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -209,11 +287,12 @@ function SecuritySettings() {
           <h2 id="password-title">修改密码</h2>
         </div>
         <form className={styles.passwordForm} onSubmit={handleSubmit}>
-          <label><span>当前密码</span><input type="password" autoComplete="current-password" /></label>
-          <label><span>新密码</span><input type="password" autoComplete="new-password" /></label>
-          <label><span>确认密码</span><input type="password" autoComplete="new-password" /></label>
-          <p><KeyRound aria-hidden="true" />当前后端尚未提供安全的修改密码接口，因此不会提交或伪造修改结果。</p>
-          <button type="submit" disabled>修改密码暂不可用</button>
+          <label><span>当前密码</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required minLength={6} maxLength={128} /></label>
+          <label><span>新密码</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={6} maxLength={128} /></label>
+          <label><span>确认密码</span><input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={6} maxLength={128} /></label>
+          <p><KeyRound aria-hidden="true" />修改成功后会撤销全部登录会话，并要求重新登录。</p>
+          {error ? <p className={styles.errorMessage} role="alert">{error}</p> : null}
+          <button type="submit" disabled={isSubmitting}>{isSubmitting ? "正在修改..." : "修改密码"}</button>
         </form>
       </section>
     </>

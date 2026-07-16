@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
 import { LoginDto } from './login.dto';
 import { RegisterDto } from './register.dto';
+import { ChangePasswordDto } from './change-password.dto';
 
 describe('auth DTOs', () => {
   it('normalizes register username and email', async () => {
@@ -47,5 +48,20 @@ describe('auth DTOs', () => {
     const dto = plainToInstance(LoginDto, { identifier, password: 'password' });
     expect(await validate(dto)).toHaveLength(0);
     expect(dto.identifier).toBe(identifier.trim().toLowerCase());
+  });
+
+  it('requires matching new passwords that satisfy the existing password length rule', async () => {
+    const valid = plainToInstance(ChangePasswordDto, {
+      currentPassword: 'current-password', newPassword: 'new-password', confirmPassword: 'new-password',
+    });
+    const mismatch = plainToInstance(ChangePasswordDto, {
+      currentPassword: 'current-password', newPassword: 'new-password', confirmPassword: 'different-password',
+    });
+    const weak = plainToInstance(ChangePasswordDto, {
+      currentPassword: 'current-password', newPassword: 'short', confirmPassword: 'short',
+    });
+    expect(await validate(valid)).toHaveLength(0);
+    expect(await validate(mismatch)).not.toHaveLength(0);
+    expect(await validate(weak)).not.toHaveLength(0);
   });
 });

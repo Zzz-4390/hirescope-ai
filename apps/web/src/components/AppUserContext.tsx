@@ -8,12 +8,12 @@ export const AppUserContext = createContext<CurrentUser | null>(null);
 
 interface AppAvatarContextValue {
   avatarUrl: string | null;
-  setAvatarFile: (file: File | null) => void;
+  setAvatarUrl: (avatarUrl: string | null) => void;
 }
 
 export const AppAvatarContext = createContext<AppAvatarContextValue>({
   avatarUrl: null,
-  setAvatarFile: () => undefined,
+  setAvatarUrl: () => undefined,
 });
 
 interface AppProjectContextValue {
