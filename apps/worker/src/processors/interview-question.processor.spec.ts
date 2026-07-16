@@ -5,12 +5,15 @@ import { InterviewQuestionProcessor } from './interview-question.processor';
 
 const EVIDENCE = {
   techStack: [{ name: 'TypeScript' }],
-  directoryTree: [{ path: 'src/main.ts', type: 'file' as const }],
+  directoryTree: [{ path: 'package.json', type: 'file' as const }, { path: 'src/main.ts', type: 'file' as const }],
   testFiles: [],
   entryFiles: ['src/main.ts'],
   coreModules: [{ path: 'src' }],
-  configFiles: [],
-  snippets: [{ path: 'src/main.ts', content: 'export function bootstrap() {}', truncated: false }],
+  configFiles: ['package.json'],
+  snippets: [
+    { path: 'package.json', content: '{"scripts":{"test":"vitest"}}', truncated: false },
+    { path: 'src/main.ts', content: 'export function bootstrap() {}', truncated: false },
+  ],
   evidencePaths: ['src/main.ts'],
   budget: { maxFileChars: 8_000, maxSnippetChars: 48_000, maxContextChars: 64_000, usedSnippetChars: 30, usedContextChars: 500 },
 };

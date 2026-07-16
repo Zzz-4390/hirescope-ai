@@ -22,6 +22,7 @@ describe('CodeReviewContextBuilder', () => {
     await writeFile(join(root, 'server.pem'), 'private-key');
     await writeFile(join(root, '.npmrc'), '//registry.example/:_authToken=must-not-leak');
     await writeFile(join(root, 'service.credentials.json'), '{"token":"must-not-leak"}');
+    await writeFile(join(root, 'src', 'leaky-auth.service.ts'), 'const token = "literal-token-must-not-leak";');
     await writeFile(join(root, 'logo.png'), Buffer.from([0, 1, 2]));
     await writeFile(join(root, 'node_modules', 'dep', 'index.js'), 'dependency');
 
@@ -31,6 +32,7 @@ describe('CodeReviewContextBuilder', () => {
       { path: 'src/main.ts', type: 'file' }, { path: 'prisma/schema.prisma', type: 'file' },
       { path: '.github/workflows/ci.yml', type: 'file' }, { path: 'server.pem', type: 'file' },
       { path: '.npmrc', type: 'file' }, { path: 'service.credentials.json', type: 'file' },
+      { path: 'src/leaky-auth.service.ts', type: 'file' },
       { path: 'logo.png', type: 'file' }, { path: 'node_modules/dep/index.js', type: 'file' },
       { path: 'src', type: 'directory' }, { path: 'test', type: 'directory' },
     ];
@@ -50,7 +52,7 @@ describe('CodeReviewContextBuilder', () => {
     expect(first.snippets.slice(0, 3).map((snippet) => snippet.path)).toEqual(['.github/workflows/ci.yml', 'package.json', 'prisma/schema.prisma']);
     expect(first.evidencePaths).toEqual(expect.arrayContaining(['src/main.ts', 'src/review.service.ts', 'test/review.spec.ts']));
     expect(JSON.stringify(first)).not.toContain('must-not-leak');
-    expect(first.evidencePaths).not.toEqual(expect.arrayContaining(['.env', '.npmrc', 'server.pem', 'service.credentials.json', 'logo.png', 'node_modules/dep/index.js']));
+    expect(first.evidencePaths).not.toEqual(expect.arrayContaining(['.env', '.npmrc', 'server.pem', 'service.credentials.json', 'src/leaky-auth.service.ts', 'logo.png', 'node_modules/dep/index.js']));
   });
 
   it('enforces per-file, snippet, and total budgets with stable truncation', async () => {
@@ -65,10 +67,35 @@ describe('CodeReviewContextBuilder', () => {
     const context = await new CodeReviewContextBuilder().build(root, { techStack: [], directoryTree: [...directoryTree].reverse(), coreModules: [{ path: 'src' }], entryFiles: [], statistics: {} });
 
     expect(context.snippets.every((snippet) => snippet.content.length <= CODE_REVIEW_CONTEXT_LIMITS.maxFileChars)).toBe(true);
+    expect(context.snippets.length).toBeLessThanOrEqual(CODE_REVIEW_CONTEXT_LIMITS.maxSnippetFiles);
     expect(context.budget.usedSnippetChars).toBeLessThanOrEqual(CODE_REVIEW_CONTEXT_LIMITS.maxSnippetChars);
     expect(JSON.stringify(context).length).toBeLessThanOrEqual(CODE_REVIEW_CONTEXT_LIMITS.maxContextChars);
     expect(context.snippets.map((snippet) => snippet.path)).toEqual([...context.snippets.map((snippet) => snippet.path)].sort());
     expect(context.snippets.some((snippet) => snippet.truncated)).toBe(true);
+  });
+
+  it('prioritizes controllers, services, database, queue, auth, entries, and tests while skipping oversized files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'hirescope-review-priority-'));
+    const important = [
+      'src/auth/auth.guard.ts', 'src/users/users.controller.ts', 'src/users/users.service.ts',
+      'src/database/user.repository.ts', 'src/queue/task.processor.ts', 'src/main.ts', 'test/users.spec.ts', 'package.json',
+    ];
+    const generic = Array.from({ length: 30 }, (_, index) => `src/generic/file-${String(index).padStart(2, '0')}.ts`);
+    const oversized = 'src/users/oversized.service.ts';
+    for (const path of [...important, ...generic, oversized]) {
+      const segments = path.split('/');
+      await mkdir(join(root, ...segments.slice(0, -1)), { recursive: true });
+      await writeFile(join(root, ...segments), path === oversized ? 'x'.repeat(CODE_REVIEW_CONTEXT_LIMITS.maxFileBytes + 1) : `export const value = '${path}';`);
+    }
+    const paths = [...important, ...generic, oversized];
+    const context = await new CodeReviewContextBuilder().build(root, {
+      techStack: [{ name: 'TypeScript' }], directoryTree: paths.map((path) => ({ path, type: 'file' as const })),
+      coreModules: [{ path: 'src' }], entryFiles: ['src/main.ts'], statistics: {},
+    });
+
+    expect(context.snippets.length).toBeLessThanOrEqual(CODE_REVIEW_CONTEXT_LIMITS.maxSnippetFiles);
+    expect(context.snippets.map((snippet) => snippet.path)).toEqual(expect.arrayContaining(important));
+    expect(context.evidencePaths).not.toContain(oversized);
   });
 
   it('keeps evidence from multiple deeply nested monorepo subprojects', async () => {

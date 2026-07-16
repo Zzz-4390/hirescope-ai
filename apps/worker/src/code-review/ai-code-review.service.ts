@@ -1,5 +1,6 @@
 import { CodeReviewResultSchema, type CodeReviewResult } from '@hirescope/shared-types';
 import { AiProviderError, OpenAiCompatibleProvider, type AiCompletion } from '../ai/openai-compatible.provider';
+import { buildEvidencePrompts } from '../ai/evidence-prompt';
 import type { CodeReviewAnalysisInput, CodeReviewEvidenceContext, CodeReviewGenerationContext, CodeReviewGenerator, GeneratedCodeReview } from './code-review-generator';
 import { DeterministicCodeReviewService } from './deterministic-code-review.service';
 
@@ -53,7 +54,12 @@ export class AiCodeReviewService implements CodeReviewGenerator {
     for (let attempt = 0; attempt < MAX_RESPONSE_ATTEMPTS; attempt += 1) {
       let completion: AiCompletion | undefined;
       try {
-        completion = await this.provider.completeJson({ systemPrompt: systemPrompt(), userPrompt: userPrompt(analysis, evidence, attempt) });
+        completion = await this.provider.completeJson(buildEvidencePrompts({
+          systemPrompt: systemPrompt(),
+          task: attempt === 0 ? '基于证据生成代码审查' : '上次输出无效。仅使用 evidencePaths 中的路径重新生成完整 JSON',
+          projectSummary: { summary: analysis.summary, statistics: analysis.statistics },
+          reviewContext: evidence ?? emptyEvidence(analysis),
+        }));
         const result = validateEvidence(parseStructuredOutput(completion.content), evidence);
         await this.logs.record(logEntry(context, this.provider, 'SUCCEEDED', attempt, completion));
         return generatedResult(result, completion.model ?? this.provider.model);
@@ -83,14 +89,6 @@ function systemPrompt(): string {
   ].join('\n');
 }
 
-function userPrompt(analysis: CodeReviewAnalysisInput, evidence: CodeReviewEvidenceContext | undefined, attempt: number): string {
-  return JSON.stringify({
-    task: attempt === 0 ? '基于证据生成代码审查' : '上次输出无效。仅使用 evidencePaths 中的路径重新生成完整 JSON',
-    projectSummary: { summary: analysis.summary, statistics: analysis.statistics },
-    reviewContext: evidence ?? emptyEvidence(analysis),
-  });
-}
-
 function parseStructuredOutput(content: string): CodeReviewResult {
   let candidate: unknown;
   try { candidate = JSON.parse(content); } catch { throw new CodeReviewGenerationError('AI_RESPONSE_JSON_INVALID'); }
@@ -100,7 +98,7 @@ function parseStructuredOutput(content: string): CodeReviewResult {
 }
 
 function validateEvidence(result: CodeReviewResult, evidence: CodeReviewEvidenceContext | undefined): CodeReviewResult {
-  const allowed = new Set(evidence?.evidencePaths ?? []);
+  const allowed = new Set((evidence?.evidencePaths ?? []).map(normalizeEvidencePath));
   for (const field of ['strengths', 'risks', 'suggestions'] as const) {
     if (allowed.size > 0 && result[field].length === 0) throw new CodeReviewGenerationError('AI_RESPONSE_EVIDENCE_INVALID');
     for (const item of result[field]) {
@@ -112,8 +110,11 @@ function validateEvidence(result: CodeReviewResult, evidence: CodeReviewEvidence
     for (const match of value.matchAll(/\[([^\]\r\n]+)\]/g)) {
       if (!allowed.has(normalizeEvidencePath(match[1]!))) throw new CodeReviewGenerationError('AI_RESPONSE_EVIDENCE_INVALID');
     }
+    for (const match of value.matchAll(/(?:\.?\.?[\\/])?(?:[\w.@-]+[\\/])+[\w.@-]+\.[A-Za-z0-9]+/g)) {
+      if (!allowed.has(normalizeEvidencePath(match[0]))) throw new CodeReviewGenerationError('AI_RESPONSE_EVIDENCE_INVALID');
+    }
   }
-  if ((evidence?.testFiles.length ?? 0) > 0 && resultStrings(result).some((value) => /(?:项目)?(?:没有|不存在|未包含)(?:任何)?测试(?:文件)?|\bno tests?\b|\bwithout tests?\b/i.test(value))) {
+  if ((evidence?.testFiles.length ?? 0) > 0 && resultStrings(result).some((value) => /(?:项目)?(?:没有|不存在|未包含|不含|缺少|无)(?:任何)?测试(?:文件)?|\b(?:has no|lacks?|without) tests?\b|\bno tests?\b/i.test(value))) {
     throw new CodeReviewGenerationError('AI_RESPONSE_EVIDENCE_INVALID');
   }
   return result;

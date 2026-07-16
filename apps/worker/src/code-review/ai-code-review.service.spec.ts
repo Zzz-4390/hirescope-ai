@@ -6,10 +6,14 @@ const CONTEXT = { userId: 'user', projectId: 'project', taskId: 'task' };
 const ANALYSIS = { summary: 'NestJS worker', techStack: [{ name: 'TypeScript' }], coreModules: [{ name: 'Reviews' }], statistics: { totalFiles: 10 } };
 const EVIDENCE = {
   techStack: ANALYSIS.techStack,
-  directoryTree: [{ path: 'src/review.service.ts', type: 'file' as const }, { path: 'test/review.spec.ts', type: 'file' as const }],
-  testFiles: ['test/review.spec.ts'], entryFiles: [], coreModules: [], configFiles: [],
-  snippets: [{ path: 'src/review.service.ts', content: 'export class ReviewService {}', truncated: false }],
-  evidencePaths: ['src/review.service.ts', 'test/review.spec.ts'],
+  directoryTree: [{ path: 'package.json', type: 'file' as const }, { path: 'src/review.service.ts', type: 'file' as const }, { path: 'test/review.spec.ts', type: 'file' as const }],
+  testFiles: ['test/review.spec.ts'], entryFiles: [], coreModules: [], configFiles: ['package.json'],
+  snippets: [
+    { path: 'package.json', content: '{"scripts":{"test":"vitest"}}', truncated: false },
+    { path: 'src/review.service.ts', content: 'export class ReviewService {}', truncated: false },
+    { path: 'test/review.spec.ts', content: 'describe("review", () => {});', truncated: false },
+  ],
+  evidencePaths: ['package.json', 'src/review.service.ts', 'test/review.spec.ts'],
   budget: { maxFileChars: 8000, maxSnippetChars: 48000, maxContextChars: 64000, usedSnippetChars: 29, usedContextChars: 500 },
 };
 const RESULT = {
@@ -37,6 +41,9 @@ describe('AiCodeReviewService', () => {
     const { service, provider, logs } = setup();
     await expect(service.review(ANALYSIS, CONTEXT, EVIDENCE)).resolves.toEqual({ summary: RESULT.overview, score: 78, model: 'actual-model', result: RESULT });
     expect(provider.completeJson).toHaveBeenCalledWith(expect.objectContaining({ userPrompt: expect.stringContaining('test/review.spec.ts') }));
+    const prompt = provider.completeJson.mock.calls[0]![0].userPrompt;
+    expect(prompt).toContain('package.json');
+    expect(prompt).toContain('export class ReviewService');
     expect(logs.record).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUCCEEDED', scene: 'CODE_REVIEW', model: 'actual-model', totalTokens: 30 }));
     expect(logs.record.mock.calls[0]![0]).not.toHaveProperty('apiKey');
     expect(logs.record.mock.calls[0]![0]).not.toHaveProperty('prompt');
@@ -81,6 +88,14 @@ describe('AiCodeReviewService', () => {
     expect(JSON.stringify(generated.result)).not.toContain('invented.service.ts');
     expect(logs.record).toHaveBeenNthCalledWith(1, expect.objectContaining({ status: 'FAILED', errorCode: 'AI_RESPONSE_EVIDENCE_INVALID', retryCount: 0 }));
     expect(logs.record).toHaveBeenNthCalledWith(2, expect.objectContaining({ status: 'SUCCEEDED', retryCount: 1 }));
+  });
+
+  it('rejects uncited fabricated paths embedded after a valid citation', async () => {
+    const fabricated = { ...RESULT, risks: ['[src/review.service.ts] Also inspect src/invented.service.ts for retries.'] };
+    const { service } = setup(JSON.stringify(fabricated));
+    const generated = await service.review(ANALYSIS, CONTEXT, EVIDENCE);
+    expect(generated.model).toBe('deterministic-code-review-v1');
+    expect(JSON.stringify(generated.result)).not.toContain('invented.service.ts');
   });
 
   it('rejects a no-tests claim when test files are present', async () => {

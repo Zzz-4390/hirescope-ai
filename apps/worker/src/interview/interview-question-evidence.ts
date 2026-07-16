@@ -51,13 +51,17 @@ export function validateInterviewQuestionEvidence(
 
 export function restrictInterviewQuestionEvidence(evidence: InterviewQuestionEvidenceContext): InterviewQuestionEvidenceContext {
   const allowedPaths = new Set(interviewQuestionEvidencePaths(evidence));
+  const contextPaths = new Set([
+    ...allowedPaths,
+    ...evidence.configFiles.filter((path) => evidence.snippets.some((snippet) => snippet.path === path)),
+  ]);
   return {
     ...evidence,
-    directoryTree: evidence.directoryTree.filter((entry) => entry.type === 'file' && allowedPaths.has(entry.path)),
+    directoryTree: evidence.directoryTree.filter((entry) => entry.type === 'file' && contextPaths.has(entry.path)),
     testFiles: evidence.testFiles.filter((path) => allowedPaths.has(path)),
     entryFiles: evidence.entryFiles.filter((path) => allowedPaths.has(path)),
-    configFiles: [],
-    snippets: evidence.snippets.filter((snippet) => allowedPaths.has(snippet.path)),
+    configFiles: evidence.configFiles.filter((path) => contextPaths.has(path)),
+    snippets: evidence.snippets.filter((snippet) => contextPaths.has(snippet.path)),
     evidencePaths: [...allowedPaths],
   };
 }

@@ -14,13 +14,21 @@ const ANALYSIS = {
 };
 const EVIDENCE = {
   techStack: ANALYSIS.techStack,
-  directoryTree: ANALYSIS.directoryTree,
-  testFiles: [],
+  directoryTree: [
+    { path: 'package.json', type: 'file' as const },
+    { path: 'src/interview.service.ts', type: 'file' as const },
+    { path: 'test/interview.spec.ts', type: 'file' as const },
+  ],
+  testFiles: ['test/interview.spec.ts'],
   entryFiles: [],
   coreModules: ANALYSIS.coreModules,
-  configFiles: [],
-  snippets: [{ path: 'src/interview.service.ts', content: 'export class InterviewService {}', truncated: false }],
-  evidencePaths: ['src/interview.service.ts'],
+  configFiles: ['package.json'],
+  snippets: [
+    { path: 'package.json', content: '{"scripts":{"test":"vitest"}}', truncated: false },
+    { path: 'src/interview.service.ts', content: 'export class InterviewService {}', truncated: false },
+    { path: 'test/interview.spec.ts', content: 'describe("interview", () => {});', truncated: false },
+  ],
+  evidencePaths: ['src/interview.service.ts', 'test/interview.spec.ts'],
   budget: { maxFileChars: 8_000, maxSnippetChars: 48_000, maxContextChars: 64_000, usedSnippetChars: 32, usedContextChars: 500 },
 };
 const QUESTIONS = {
@@ -54,6 +62,10 @@ describe('AiInterviewQuestionService', () => {
     const { service, provider, logs } = setup(JSON.stringify(QUESTIONS));
     await expect(service.generate(ANALYSIS, null, 5, InterviewDifficulty.MEDIUM, CONTEXT, EVIDENCE)).resolves.toEqual(QUESTIONS);
     expect(provider.completeJson).toHaveBeenCalledWith(expect.objectContaining({ userPrompt: expect.stringContaining('src/interview.service.ts') }));
+    const prompt = provider.completeJson.mock.calls[0]![0].userPrompt;
+    expect(prompt).toContain('package.json');
+    expect(prompt).toContain('test/interview.spec.ts');
+    expect(prompt).toContain('export class InterviewService');
     expect(logs.record).toHaveBeenCalledWith(expect.objectContaining({ status: 'SUCCEEDED', retryCount: 0, model: 'actual-test-model', totalTokens: 30 }));
     expect(logs.record.mock.calls[0]![0]).not.toHaveProperty('apiKey');
   });
@@ -71,7 +83,7 @@ describe('AiInterviewQuestionService', () => {
     const { service } = setup(JSON.stringify(invented), JSON.stringify(invented));
     const generated = await service.generate(ANALYSIS, null, 5, InterviewDifficulty.MEDIUM, CONTEXT, EVIDENCE);
     expect(JSON.stringify(generated)).not.toContain('Redis');
-    expect(generated.questions.every((question) => question.evidencePaths[0] === 'src/interview.service.ts')).toBe(true);
+    expect(generated.questions.every((question) => question.evidencePaths.every((path) => EVIDENCE.evidencePaths.includes(path)))).toBe(true);
   });
 
   it('falls back to stable evidence-based questions after repeated illegal JSON', async () => {

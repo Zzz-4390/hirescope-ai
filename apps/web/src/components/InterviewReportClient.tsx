@@ -222,7 +222,7 @@ export function InterviewReportClient({ interviewId }: InterviewReportClientProp
       {interview.status === "REPORT_GENERATING" && !report ? (
         <div className="report-generating-panel"><Loader2 aria-hidden="true" /><div><h2>报告生成中</h2><p>{task ? `${taskStatusText(task.status)}${typeof task.progress === "number" ? ` · ${task.progress}%` : ""}` : "正在恢复报告任务状态"}</p>{failure ? <small>{failure.message || failure.code}</small> : null}</div></div>
       ) : null}
-      {interview.status === "FAILED" ? <FailurePanel message={failure?.message || failure?.code || "报告生成失败"} /> : null}
+      {interview.status === "FAILED" ? <FailurePanel message={failure?.message || failure?.code || "报告生成失败"} onRetry={() => void handleCreateReport()} isRetrying={isCreating} /> : null}
       {report ? <ReportView interview={interview} report={report} /> : null}
       {interview.status === "READY" || interview.status === "IN_PROGRESS" || interview.status === "GENERATING" ? (
         <div className="interview-ready-panel"><Clock3 aria-hidden="true" /><h2>面试尚未提交</h2><p>完成全部题目并提交后才能生成报告。</p><Link className="primary-button compact" href={`/app/interviews/${interviewId}`}>返回面试</Link></div>
@@ -338,8 +338,8 @@ function difficultyText(difficulty: InterviewDetail["difficulty"]) {
   return { EASY: "简单", MEDIUM: "中等", HARD: "困难" }[difficulty];
 }
 
-function FailurePanel({ message }: { message: string }) {
-  return <div className="empty-panel"><AlertCircle aria-hidden="true" /><h2>报告暂不可用</h2><p>{message}</p></div>;
+function FailurePanel({ message, onRetry, isRetrying = false }: { message: string; onRetry?: () => void; isRetrying?: boolean }) {
+  return <div className="empty-panel"><AlertCircle aria-hidden="true" /><h2>报告暂不可用</h2><p>{message}</p>{onRetry ? <button className="primary-button compact" type="button" disabled={isRetrying} onClick={onRetry}>{isRetrying ? <Loader2 aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}重新生成报告</button> : null}</div>;
 }
 
 function taskStatusText(status: AsyncTask["status"]) {

@@ -4,6 +4,7 @@ import { TaskRecoveryService } from './task-recovery.service';
 
 const options = { batchSize: 100, queuedTimeoutMs: 60_000, processingTimeoutMs: 300_000, maxRecoveryAttempts: 3 };
 const analysisTask = { id: '8d73fbe6-0f0b-43fc-af01-81b0d7af76c4', type: TaskType.PROJECT_ANALYSIS, status: TaskStatus.PENDING, attempts: 0, projectId: 'project-id', codeReviewId: null, interviewId: null };
+const reportTask = { id: '33a604c0-1924-4f57-97d3-1df9721e54a1', type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.PENDING, attempts: 0, projectId: 'project-id', codeReviewId: null, interviewId: 'interview-id' };
 function transaction(tx: object) { return { $transaction: vi.fn((callback) => callback(tx)) }; }
 function queue(getJob = vi.fn().mockResolvedValue(undefined), add = vi.fn().mockResolvedValue(undefined)) { return { getJob, add }; }
 
@@ -20,6 +21,14 @@ describe('TaskRecoveryService', () => {
     const tx = { $queryRaw: vi.fn().mockResolvedValue([analysisTask]), asyncTask: { updateMany: vi.fn() }, project: { updateMany: vi.fn() } };
     await new TaskRecoveryService(transaction(tx) as never, queue(vi.fn().mockRejectedValue(new Error('redis'))), options).recoverBatch();
     expect(tx.asyncTask.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('recovers a PENDING retry report task only after Redis publication succeeds', async () => {
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([reportTask]), asyncTask: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, project: { updateMany: vi.fn() } };
+    const publisher = queue();
+    expect(await new TaskRecoveryService(transaction(tx) as never, publisher, options).recoverBatch()).toBe(1);
+    expect(publisher.add).toHaveBeenCalledWith(TaskType.INTERVIEW_REPORT_GENERATION, { taskId: reportTask.id }, { jobId: reportTask.id });
+    expect(tx.asyncTask.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: reportTask.id, status: TaskStatus.PENDING }, data: expect.objectContaining({ status: TaskStatus.QUEUED, bullJobId: reportTask.id }) }));
   });
 
   it('does not publish a duplicate when the deterministic BullMQ job exists', async () => {

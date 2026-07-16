@@ -47,6 +47,26 @@ describe('Interviews API', () => {
     expect(await prisma.asyncTask.count({ where: { interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: { in: [TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.PROCESSING] } } })).toBe(1);
   });
 
+  it('retries a failed report once and returns the single completed report', async () => {
+    const interview = await prisma.interview.create({ data: { userId, projectId: completedId, title: 'Retry report', status: InterviewStatus.FAILED, difficulty: InterviewDifficulty.EASY, questionCount: 5, submittedAt: new Date(), completedAt: new Date(), failureCode: 'INTERVIEW_REPORT_RESULT_INVALID', failureMessage: 'generation failed' } });
+    await prisma.asyncTask.create({ data: { userId, projectId: completedId, interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.FAILED, failureCode: 'INTERVIEW_REPORT_RESULT_INVALID', failureMessage: 'generation failed', completedAt: new Date() } });
+    const retries = await Promise.all([1, 2].map(() => request(app.getHttpServer()).post(`/api/v1/interviews/${interview.id}/report`).set(auth())));
+    expect(retries.every((response) => response.status === 202), JSON.stringify(retries.map((response) => ({ status: response.status, body: response.body })))).toBe(true);
+    const active = await prisma.asyncTask.findMany({ where: { interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: { in: [TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.PROCESSING] } } });
+    expect(active).toHaveLength(1);
+    expect(new Set(retries.map((response) => response.body.task.id))).toEqual(new Set([active[0]!.id]));
+    expect(await prisma.interview.findUnique({ where: { id: interview.id } })).toMatchObject({ status: InterviewStatus.REPORT_GENERATING, failureCode: null, failureMessage: null, completedAt: null });
+    await prisma.$transaction([
+      prisma.interviewReport.create({ data: { interviewId: interview.id, userId, overallScore: 78, summary: 'Retried successfully', dimensions: { projectUnderstanding: 78, technicalAccuracy: 78, communication: 78, problemSolving: 78 }, questionReviews: [], strengths: ['persistence'], improvements: ['none'], result: {}, model: 'deterministic-interview-report-v1' } }),
+      prisma.interview.update({ where: { id: interview.id }, data: { status: InterviewStatus.COMPLETED, completedAt: new Date() } }),
+      prisma.asyncTask.update({ where: { id: active[0]!.id }, data: { status: TaskStatus.SUCCEEDED, completedAt: new Date() } }),
+    ]);
+    const completed = await request(app.getHttpServer()).post(`/api/v1/interviews/${interview.id}/report`).set(auth());
+    expect(completed.status).toBe(202);
+    expect(completed.body.report).toMatchObject({ overallScore: 78 });
+    expect(await prisma.interviewReport.count({ where: { interviewId: interview.id } })).toBe(1);
+  });
+
   it('keeps a report task PENDING and interview REPORT_GENERATING when publication fails', async () => {
     const interview = await prisma.interview.create({ data: { userId, projectId: completedId, title: 'Report queue failure', status: InterviewStatus.SUBMITTED, difficulty: InterviewDifficulty.EASY, questionCount: 5, submittedAt: new Date() } });
     const response = await request(failedApp.getHttpServer()).post(`/api/v1/interviews/${interview.id}/report`).set(auth()); expect(response.status).toBe(503); expect(response.body.error.code).toBe('QUEUE_UNAVAILABLE');

@@ -25,9 +25,9 @@ export class CodeReviewProcessor {
     if (!task.project.analysis) return this.fail(task.id, task.codeReviewId, 'PROJECT_ANALYSIS_MISSING');
     let generated: GeneratedCodeReview;
     try {
-      const evidence = task.project.extractStoragePath && this.paths && this.contextBuilder
-        ? await this.contextBuilder.build(this.paths.resolveStoredPath(task.project.extractStoragePath), task.project.analysis)
-        : undefined;
+      if (!task.project.extractStoragePath || !this.paths || !this.contextBuilder) return this.fail(task.id, task.codeReviewId, 'CODE_REVIEW_EVIDENCE_MISSING');
+      const evidence = await this.contextBuilder.build(this.paths.resolveStoredPath(task.project.extractStoragePath), task.project.analysis);
+      if (evidence.snippets.length === 0 || evidence.evidencePaths.length === 0) return this.fail(task.id, task.codeReviewId, 'CODE_REVIEW_EVIDENCE_MISSING');
       generated = await this.reviewer.review(task.project.analysis, { userId: task.userId, projectId: task.projectId, taskId: task.id }, evidence);
     }
     catch (error) { return this.fail(task.id, task.codeReviewId, error instanceof CodeReviewGenerationError ? error.code : 'CODE_REVIEW_GENERATION_FAILED'); }

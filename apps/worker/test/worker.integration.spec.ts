@@ -39,7 +39,7 @@ describe('Project Analysis Worker integration', () => {
   const paths = new StoragePathService(storageRoot);
   const analysis = new ProjectAnalysisProcessor(prisma, paths, new ZipExtractorService(DEFAULT_EXTRACTION_LIMITS), new ProjectAnalyzerService(DEFAULT_EXTRACTION_LIMITS.maxTextReadBytes));
   const cleanup = new ProjectCleanupProcessor(prisma, paths);
-  const codeReview = new CodeReviewProcessor(prisma, new DeterministicCodeReviewService());
+  const codeReview = new CodeReviewProcessor(prisma, new DeterministicCodeReviewService(), paths, new CodeReviewContextBuilder());
   const interviewQuestions = new InterviewQuestionProcessor(prisma, new DeterministicInterviewQuestionService(), paths, new CodeReviewContextBuilder());
   const interviewReports = new InterviewReportProcessor(prisma, new DeterministicInterviewReportService());
   const queue = new Queue(TASK_QUEUE_NAME, { connection: redisConnection(process.env.REDIS_URL!) });
@@ -185,7 +185,13 @@ describe('Project Analysis Worker integration', () => {
 
   it('consumes CODE_REVIEW and persists one deterministic result', async () => {
     await queue.drain(true);
-    const project = await prisma.project.create({ data: { userId, name: 'Review Queue E2E', originalFileName: 'source.zip', fileSize: 4n, fileHash: '2'.repeat(64), status: ProjectStatus.COMPLETED, analysis: { create: { summary: 'Analyzed', techStack: [{ name: 'TypeScript', category: 'language' }], directoryTree: [], coreModules: [{ name: 'API', path: 'src/api', description: 'API' }], entryFiles: ['src/index.ts'], statistics: { totalFiles: 3, totalLines: 100, languages: { TypeScript: 100 } }, analyzerVersion: 'deterministic-v1' } } } });
+    const projectId = randomUUID();
+    const extractStoragePath = `projects/${userId}/${projectId}/extracted`;
+    const extractRoot = paths.resolveStoredPath(extractStoragePath);
+    await mkdir(join(extractRoot, 'src'), { recursive: true });
+    await writeFile(join(extractRoot, 'package.json'), '{"scripts":{"test":"vitest"}}');
+    await writeFile(join(extractRoot, 'src', 'index.ts'), 'export function bootstrap() { return true; }');
+    const project = await prisma.project.create({ data: { id: projectId, userId, name: 'Review Queue E2E', originalFileName: 'source.zip', extractStoragePath, fileSize: 4n, fileHash: '2'.repeat(64), status: ProjectStatus.COMPLETED, analysis: { create: { summary: 'Analyzed', techStack: [{ name: 'TypeScript', category: 'language' }], directoryTree: [{ path: 'package.json', type: 'file' }, { path: 'src/index.ts', type: 'file' }], coreModules: [{ name: 'API', path: 'src', description: 'API' }], entryFiles: ['src/index.ts'], statistics: { totalFiles: 2, totalLines: 1, languages: { TypeScript: 1 } }, analyzerVersion: 'deterministic-v1' } } } });
     const review = await prisma.codeReview.create({ data: { userId, projectId: project.id, status: TaskStatus.QUEUED } });
     const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, codeReviewId: review.id, type: TaskType.CODE_REVIEW, status: TaskStatus.QUEUED } });
     const connection = redisConnection(process.env.REDIS_URL!); const events = new QueueEvents(TASK_QUEUE_NAME, { connection }); await events.waitUntilReady();

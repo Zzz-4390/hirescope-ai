@@ -3,10 +3,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { CodeReviewGenerationError } from '../code-review/ai-code-review.service';
 import { CodeReviewProcessor } from './code-review.processor';
 
+const EVIDENCE = {
+  techStack: [], directoryTree: [{ path: 'src/main.ts', type: 'file' as const }], testFiles: [], entryFiles: ['src/main.ts'], coreModules: [], configFiles: [],
+  snippets: [{ path: 'src/main.ts', content: 'export function main() {}', truncated: false }], evidencePaths: ['src/main.ts'],
+  budget: { maxFileChars: 8_000, maxSnippetChars: 40_000, maxContextChars: 48_000, usedSnippetChars: 25, usedContextChars: 400 },
+};
+
 function task(projectStatus: ProjectStatus = ProjectStatus.COMPLETED, taskStatus: TaskStatus = TaskStatus.QUEUED, reviewStatus: TaskStatus = TaskStatus.QUEUED): any {
-  return { id: 'task', userId: 'user', type: TaskType.CODE_REVIEW, status: taskStatus, projectId: 'project', codeReviewId: 'review', codeReview: { id: 'review', status: reviewStatus }, project: { id: 'project', status: projectStatus, extractStoragePath: null, analysis: { summary: 'summary', techStack: [], directoryTree: [], coreModules: [], entryFiles: [], statistics: { totalFiles: 1, totalLines: 1, languages: {} } } } };
+  return { id: 'task', userId: 'user', type: TaskType.CODE_REVIEW, status: taskStatus, projectId: 'project', codeReviewId: 'review', codeReview: { id: 'review', status: reviewStatus }, project: { id: 'project', status: projectStatus, extractStoragePath: 'projects/user/project/extracted', analysis: { summary: 'summary', techStack: [], directoryTree: [{ path: 'src/main.ts', type: 'file' }], coreModules: [], entryFiles: ['src/main.ts'], statistics: { totalFiles: 1, totalLines: 1, languages: {} } } } };
 }
-function setup(value: any = task(), generated: unknown = { summary: 'Stable review', score: 80, model: 'test-ai-model', result: { overview: 'Overview', strengths: [], risks: [], suggestions: [], maintainability: { score: 80, summary: 'Good' }, security: { score: 80, summary: 'Good' }, performance: { score: 80, summary: 'Good' } } }, paths?: unknown, contextBuilder?: unknown) {
+function setup(value: any = task(), generated: unknown = { summary: 'Stable review', score: 80, model: 'test-ai-model', result: { overview: 'Overview', strengths: ['[src/main.ts] Good'], risks: ['[src/main.ts] Risk'], suggestions: ['[src/main.ts] Suggestion'], maintainability: { score: 80, summary: 'Good' }, security: { score: 80, summary: 'Good' }, performance: { score: 80, summary: 'Good' } } }, paths: any = { resolveStoredPath: vi.fn().mockReturnValue('D:/storage/project') }, contextBuilder: any = { build: vi.fn().mockResolvedValue(EVIDENCE) }) {
   const tx = { $queryRaw: vi.fn().mockResolvedValue([{ reviewStatus: value.codeReview.status, projectStatus: value.project.status }]), asyncTask: { update: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, codeReview: { update: vi.fn() } };
   const prisma = { asyncTask: { findUnique: vi.fn().mockResolvedValue(value) }, $transaction: vi.fn((callback) => callback(tx)) };
   const reviewer = { review: vi.fn().mockReturnValue(generated) };
@@ -40,14 +46,20 @@ describe('CodeReviewProcessor', () => {
   });
   it('builds and passes the controlled evidence context from the extracted project', async () => {
     const value = task(); value.project.extractStoragePath = 'projects/user/project/extracted';
-    const evidence = { evidencePaths: ['src/main.ts'] };
     const paths = { resolveStoredPath: vi.fn().mockReturnValue('D:/storage/projects/user/project/extracted') };
-    const contextBuilder = { build: vi.fn().mockResolvedValue(evidence) };
+    const contextBuilder = { build: vi.fn().mockResolvedValue(EVIDENCE) };
     const { processor, reviewer } = setup(value, undefined, paths, contextBuilder);
     await processor.process('task');
     expect(paths.resolveStoredPath).toHaveBeenCalledWith(value.project.extractStoragePath);
     expect(contextBuilder.build).toHaveBeenCalledWith('D:/storage/projects/user/project/extracted', value.project.analysis);
-    expect(reviewer.review).toHaveBeenCalledWith(value.project.analysis, expect.objectContaining({ projectId: 'project' }), evidence);
+    expect(reviewer.review).toHaveBeenCalledWith(value.project.analysis, expect.objectContaining({ projectId: 'project' }), EVIDENCE);
+  });
+  it('fails closed when no readable project evidence can be built', async () => {
+    const contextBuilder = { build: vi.fn().mockResolvedValue({ ...EVIDENCE, snippets: [], evidencePaths: [] }) };
+    const { processor, reviewer, tx } = setup(task(), undefined, undefined, contextBuilder);
+    await processor.process('task');
+    expect(reviewer.review).not.toHaveBeenCalled();
+    expect(tx.codeReview.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.FAILED, failureCode: 'CODE_REVIEW_EVIDENCE_MISSING' }) }));
   });
   it('does not write the result twice when a completed job is delivered again', async () => {
     const { processor, prisma, tx } = setup(); prisma.asyncTask.findUnique.mockResolvedValueOnce(task()).mockResolvedValueOnce(task(ProjectStatus.COMPLETED, TaskStatus.SUCCEEDED, TaskStatus.SUCCEEDED));

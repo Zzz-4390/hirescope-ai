@@ -1,6 +1,7 @@
 import { InterviewQuestionsResultSchema, type InterviewQuestionsResult } from '@hirescope/shared-types';
 import type { InterviewDifficulty } from '@prisma/client';
 import { AiProviderError, OpenAiCompatibleProvider, type AiCompletion } from '../ai/openai-compatible.provider';
+import { buildEvidencePrompts } from '../ai/evidence-prompt';
 import { DeterministicInterviewQuestionService } from './deterministic-interview-question.service';
 import { InterviewQuestionEvidenceError, validateInterviewQuestionEvidence } from './interview-question-evidence';
 import type { InterviewAnalysisInput, InterviewQuestionEvidenceContext, InterviewQuestionGenerationContext, InterviewQuestionGenerator } from './interview-question-generator';
@@ -67,10 +68,15 @@ export class AiInterviewQuestionService implements InterviewQuestionGenerator {
     for (let attempt = 0; attempt < MAX_RESPONSE_ATTEMPTS; attempt += 1) {
       let completion: AiCompletion | undefined;
       try {
-        completion = await this.provider.completeJson({
+        completion = await this.provider.completeJson(buildEvidencePrompts({
           systemPrompt: systemPrompt(questionCount, difficulty),
-          userPrompt: userPrompt(analysis, latestReview, evidence, attempt),
-        });
+          task: attempt === 0
+            ? '基于受控证据生成面试题'
+            : '上次输出无效。仅使用 reviewContext.evidencePaths 中的路径和已提供技术重新生成完整 JSON',
+          projectSummary: { summary: analysis.summary, statistics: analysis.statistics },
+          latestCodeReview: latestReview,
+          reviewContext: evidence ?? emptyEvidence(analysis),
+        }));
         const result = validateInterviewQuestionEvidence(
           parseStructuredOutput(completion.content, questionCount, difficulty),
           evidence,
@@ -109,22 +115,6 @@ function difficultyRule(difficulty: InterviewDifficulty): string {
   if (difficulty === 'EASY') return 'EASY 题应聚焦真实文件的职责、输入输出和基本流程。';
   if (difficulty === 'HARD') return 'HARD 题必须基于真实实现追问并发、失败恢复、一致性、安全边界或工程取舍，并要求可验证方案。';
   return 'MEDIUM 题应基于真实实现追问核心流程、依赖边界、异常处理和测试策略。';
-}
-
-function userPrompt(
-  analysis: InterviewAnalysisInput,
-  latestReview: unknown,
-  evidence: InterviewQuestionEvidenceContext | undefined,
-  attempt: number,
-): string {
-  return JSON.stringify({
-    task: attempt === 0
-      ? '基于受控证据生成面试题'
-      : '上次输出无效。仅使用 reviewContext.evidencePaths 中的路径和已提供技术重新生成完整 JSON',
-    projectSummary: { summary: analysis.summary, statistics: analysis.statistics },
-    latestCodeReview: latestReview,
-    reviewContext: evidence ?? emptyEvidence(analysis),
-  });
 }
 
 function parseStructuredOutput(content: string, questionCount: number, difficulty: InterviewDifficulty): InterviewQuestionsResult {

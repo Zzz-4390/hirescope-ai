@@ -4,8 +4,12 @@ import type { CodeReviewAnalysisInput, CodeReviewEvidenceContext, CodeReviewEvid
 
 export const CODE_REVIEW_CONTEXT_LIMITS = Object.freeze({
   maxFileChars: 8_000,
-  maxSnippetChars: 48_000,
-  maxContextChars: 64_000,
+  maxFileBytes: 512_000,
+  maxSnippetFiles: 16,
+  maxSnippetChars: 40_000,
+  maxTreeEntries: 400,
+  maxListedFiles: 200,
+  maxContextChars: 48_000,
 });
 
 const EXCLUDED_DIRECTORIES = new Set(['.aws', '.git', '.gnupg', '.hg', '.ssh', '.svn', 'node_modules', 'vendor', 'dist', 'build', '.next', 'coverage', 'out', 'target', 'bin', 'obj']);
@@ -14,36 +18,36 @@ const SENSITIVE_NAMES = new Set(['.netrc', '.npmrc', '.pypirc', 'credentials.jso
 const SOURCE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cs', '.css', '.go', '.graphql', '.groovy', '.h', '.hpp', '.html', '.java', '.js', '.jsx', '.kt', '.kts', '.php', '.prisma', '.py', '.rb', '.rs', '.scss', '.sql', '.svelte', '.swift', '.ts', '.tsx', '.vue']);
 
 type DirectoryEntry = { path: string; type: 'file' | 'directory' };
-type Candidate = { path: string; priority: number };
-
 export class CodeReviewContextBuilder {
   async build(root: string, analysis: CodeReviewAnalysisInput): Promise<CodeReviewEvidenceContext> {
     const absoluteRoot = resolve(root);
     const tree = directoryEntries(analysis.directoryTree).filter((entry) => isAllowedPath(entry.path));
     const filePaths = tree.filter((entry) => entry.type === 'file').map((entry) => entry.path).sort(compareText);
     const fileSet = new Set(filePaths);
-    const testFiles = filePaths.filter(isTestFile);
-    const entryFiles = stringArray(analysis.entryFiles).filter((path) => fileSet.has(path)).sort(compareText);
-    const configFiles = filePaths.filter(isReviewConfig);
-    const coreModules = recordArray(analysis.coreModules).filter((module) => typeof module.path === 'string' && isAllowedPath(module.path));
+    const testFiles = filePaths.filter(isTestFile).slice(0, CODE_REVIEW_CONTEXT_LIMITS.maxListedFiles);
+    const entryFiles = stringArray(analysis.entryFiles).filter((path) => fileSet.has(path)).sort(compareText).slice(0, CODE_REVIEW_CONTEXT_LIMITS.maxListedFiles);
+    const configFiles = filePaths.filter(isReviewConfig).slice(0, CODE_REVIEW_CONTEXT_LIMITS.maxListedFiles);
+    const coreModules = recordArray(analysis.coreModules)
+      .filter((module) => typeof module.path === 'string' && isAllowedPath(module.path))
+      .sort((left, right) => compareText(String(left.path), String(right.path)))
+      .slice(0, CODE_REVIEW_CONTEXT_LIMITS.maxListedFiles);
     const corePaths = coreModules.map((module) => String(module.path));
-    const candidates = filePaths
-      .map((path): Candidate => ({ path, priority: priority(path, testFiles, entryFiles, configFiles, corePaths) }))
-      .filter((candidate) => candidate.priority < 5)
-      .sort((left, right) => left.priority - right.priority || compareText(left.path, right.path));
+    const candidates = prioritizedCandidates(filePaths, testFiles, entryFiles, configFiles, corePaths);
 
     const snippets: CodeReviewEvidenceSnippet[] = [];
     let usedSnippetChars = 0;
-    for (const candidate of candidates) {
-      if (usedSnippetChars >= CODE_REVIEW_CONTEXT_LIMITS.maxSnippetChars) break;
+    for (const path of candidates) {
+      if (snippets.length >= CODE_REVIEW_CONTEXT_LIMITS.maxSnippetFiles || usedSnippetChars >= CODE_REVIEW_CONTEXT_LIMITS.maxSnippetChars) break;
       const remaining = CODE_REVIEW_CONTEXT_LIMITS.maxSnippetChars - usedSnippetChars;
-      const snippet = await readSnippet(absoluteRoot, candidate.path, Math.min(CODE_REVIEW_CONTEXT_LIMITS.maxFileChars, remaining));
+      const snippet = await readSnippet(absoluteRoot, path, Math.min(CODE_REVIEW_CONTEXT_LIMITS.maxFileChars, remaining));
       if (!snippet) continue;
       snippets.push(snippet);
       usedSnippetChars += snippet.content.length;
     }
 
-    const prioritizedTree = [...tree].sort((left, right) => treePriority(left, snippets, testFiles, entryFiles, configFiles) - treePriority(right, snippets, testFiles, entryFiles, configFiles) || compareText(left.path, right.path));
+    const prioritizedTree = [...tree]
+      .sort((left, right) => treePriority(left, snippets, testFiles, entryFiles, configFiles) - treePriority(right, snippets, testFiles, entryFiles, configFiles) || compareText(left.path, right.path))
+      .slice(0, CODE_REVIEW_CONTEXT_LIMITS.maxTreeEntries);
     const context: CodeReviewEvidenceContext = {
       techStack: analysis.techStack,
       directoryTree: prioritizedTree,
@@ -67,12 +71,13 @@ export class CodeReviewContextBuilder {
 function fitContextBudget(context: CodeReviewEvidenceContext): void {
   refreshContextMetrics(context);
   while (context.budget.usedContextChars > CODE_REVIEW_CONTEXT_LIMITS.maxContextChars) {
-    if (context.directoryTree.length > 0) context.directoryTree.pop();
-    else if (context.snippets.length > 0) context.snippets.pop();
+    if (context.directoryTree.length > 50) context.directoryTree.pop();
+    else if (context.snippets.length > 1) context.snippets.pop();
     else if (context.coreModules.length > 0) context.coreModules.pop();
     else if (context.configFiles.length > 0) context.configFiles.pop();
     else if (context.testFiles.length > 0) context.testFiles.pop();
     else if (context.entryFiles.length > 0) context.entryFiles.pop();
+    else if (context.directoryTree.length > 0) context.directoryTree.pop();
     else if (Array.isArray(context.techStack) && context.techStack.length > 0) context.techStack.pop();
     else break;
     refreshContextMetrics(context);
@@ -80,9 +85,7 @@ function fitContextBudget(context: CodeReviewEvidenceContext): void {
 }
 
 function refreshContextMetrics(context: CodeReviewEvidenceContext): void {
-  const visibleFiles = new Set(context.directoryTree.filter((entry) => entry.type === 'file').map((entry) => entry.path));
-  for (const path of [...context.testFiles, ...context.entryFiles, ...context.configFiles, ...context.snippets.map((snippet) => snippet.path)]) visibleFiles.add(path);
-  context.evidencePaths = [...visibleFiles].sort(compareText);
+  context.evidencePaths = context.snippets.map((snippet) => snippet.path).sort(compareText);
   context.budget.usedSnippetChars = context.snippets.reduce((total, snippet) => total + snippet.content.length, 0);
   context.budget.usedContextChars = serializedLength(context);
   const recalculated = serializedLength(context);
@@ -96,7 +99,7 @@ async function readSnippet(root: string, path: string, maxChars: number): Promis
   if (!child || child === '..' || child.startsWith(`..\\`) || child.startsWith('../') || isAbsolute(child)) return null;
   try {
     const fileStat = await stat(absolute);
-    if (!fileStat.isFile()) return null;
+    if (!fileStat.isFile() || fileStat.size > CODE_REVIEW_CONTEXT_LIMITS.maxFileBytes) return null;
     const maxBytes = Math.min(fileStat.size, maxChars * 4);
     const handle = await open(absolute, 'r');
     try {
@@ -105,6 +108,7 @@ async function readSnippet(root: string, path: string, maxChars: number): Promis
       const bytes = buffer.subarray(0, bytesRead);
       if (bytes.includes(0)) return null;
       const decoded = bytes.toString('utf8');
+      if (containsLikelySecret(decoded)) return null;
       const content = decoded.slice(0, maxChars);
       return { path, content, truncated: fileStat.size > bytesRead || decoded.length > maxChars };
     } finally {
@@ -113,6 +117,12 @@ async function readSnippet(root: string, path: string, maxChars: number): Promis
   } catch {
     return null;
   }
+}
+
+function containsLikelySecret(content: string): boolean {
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(content)) return true;
+  if (/\bBearer\s+[A-Za-z0-9._~+/-]{16,}/i.test(content)) return true;
+  return /(?:^|\W)(?:token|api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|auth[_-]?token|secret|password|private[_-]?key)\s*["']?\s*[:=]\s*["'`][^"'`\r\n]{8,}/im.test(content);
 }
 
 function directoryEntries(value: unknown): DirectoryEntry[] {
@@ -155,6 +165,11 @@ function isReviewConfig(path: string): boolean {
   const lower = path.toLowerCase();
   const name = posix.basename(lower);
   return name === 'package.json'
+    || name === 'pom.xml' || name === 'pyproject.toml' || name === 'requirements.txt'
+    || name === 'go.mod' || name === 'cargo.toml'
+    || /^tsconfig(?:\.[^.]+)?\.json$/.test(name)
+    || /^(?:vite|vitest|jest|webpack|rollup)\.config\./.test(name)
+    || /^(?:build|settings)\.gradle(?:\.kts)?$/.test(name)
     || lower.endsWith('/prisma/schema.prisma') || lower === 'prisma/schema.prisma'
     || name === 'nest-cli.json' || /^next\.config\./.test(name)
     || name === 'dockerfile' || name.startsWith('dockerfile.') || /^docker-compose(?:\.[^.]+)?\.ya?ml$/.test(name)
@@ -162,12 +177,21 @@ function isReviewConfig(path: string): boolean {
     || ['.gitlab-ci.yml', 'azure-pipelines.yml', 'jenkinsfile'].includes(name);
 }
 
-function priority(path: string, tests: string[], entries: string[], configs: string[], corePaths: string[]): number {
-  if (configs.includes(path)) return 0;
-  if (tests.includes(path)) return 1;
-  if (entries.includes(path)) return 2;
-  if (corePaths.some((corePath) => path === corePath || path.startsWith(`${corePath}/`))) return 3;
-  return SOURCE_EXTENSIONS.has(extname(path).toLowerCase()) ? 4 : 5;
+function prioritizedCandidates(filePaths: string[], tests: string[], entries: string[], configs: string[], corePaths: string[]): string[] {
+  const candidates = new Set<string>();
+  const add = (paths: string[], limit = paths.length) => paths.slice(0, limit).forEach((path) => candidates.add(path));
+  add(configs, 4);
+  add(tests, 4);
+  add(entries, 3);
+  add(filePaths.filter(isHighSignalSource), 8);
+  add(filePaths.filter((path) => corePaths.some((corePath) => path === corePath || path.startsWith(`${corePath}/`))), 8);
+  add(filePaths.filter((path) => SOURCE_EXTENSIONS.has(extname(path).toLowerCase())));
+  return [...candidates];
+}
+
+function isHighSignalSource(path: string): boolean {
+  const lower = path.toLowerCase();
+  return /(?:^|[/.\-_])(?:controller|service|repository|database|db|dao|entity|model|migration|queue|worker|job|processor|consumer|producer|auth|guard|jwt|session|permission)(?:[/.\-_]|$)/.test(lower);
 }
 
 function treePriority(entry: DirectoryEntry, snippets: CodeReviewEvidenceSnippet[], tests: string[], entries: string[], configs: string[]): number {
