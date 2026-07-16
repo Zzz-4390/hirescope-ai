@@ -1,0 +1,186 @@
+name: hirescope-ai
+
+x-app-build: &app-build
+  context: .
+  dockerfile: docker/Dockerfile
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  storage-init:
+    image: busybox:1.36
+    command: ["sh", "-c", "chown -R 1001:1001 /storage && chmod 700 /storage"]
+    volumes:
+      - storage_data:/storage
+    restart: "no"
+
+  migrate:
+    build:
+      <<: *app-build
+      target: migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["migration"]
+    restart: "no"
+
+  api:
+    build:
+      <<: *app-build
+      target: api
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      REDIS_COMMAND_TIMEOUT_MS: ${REDIS_COMMAND_TIMEOUT_MS:-5000}
+      STORAGE_ROOT: /app/storage
+      TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-hirescope-tasks}
+      ZIP_MAX_BYTES: ${ZIP_MAX_BYTES:?ZIP_MAX_BYTES is required}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_ISSUER: ${JWT_ISSUER:-hirescope-api}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-hirescope-web}
+      AUTH_REFRESH_HASH_SECRET: ${AUTH_REFRESH_HASH_SECRET:?AUTH_REFRESH_HASH_SECRET is required}
+      AUTH_REFRESH_TTL_SECONDS: ${AUTH_REFRESH_TTL_SECONDS:-2592000}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-__Secure-hirescope_refresh}
+      AUTH_DUMMY_PASSWORD_HASH: ${AUTH_DUMMY_PASSWORD_HASH:?AUTH_DUMMY_PASSWORD_HASH is required}
+      AUTH_ARGON2_MEMORY_KIB: ${AUTH_ARGON2_MEMORY_KIB:-19456}
+      AUTH_ARGON2_TIME_COST: ${AUTH_ARGON2_TIME_COST:-2}
+      AUTH_ARGON2_PARALLELISM: ${AUTH_ARGON2_PARALLELISM:-1}
+      AUTH_REGISTER_WINDOW_SECONDS: ${AUTH_REGISTER_WINDOW_SECONDS:-3600}
+      AUTH_REGISTER_MAX_REQUESTS: ${AUTH_REGISTER_MAX_REQUESTS:-5}
+      AUTH_LOGIN_WINDOW_SECONDS: ${AUTH_LOGIN_WINDOW_SECONDS:-900}
+      AUTH_LOGIN_MAX_REQUESTS: ${AUTH_LOGIN_MAX_REQUESTS:-10}
+      AUTH_REFRESH_WINDOW_SECONDS: ${AUTH_REFRESH_WINDOW_SECONDS:-300}
+      AUTH_REFRESH_MAX_REQUESTS: ${AUTH_REFRESH_MAX_REQUESTS:-30}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:?OSS_ACCESS_KEY_ID is required}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:?OSS_ACCESS_KEY_SECRET is required}
+      OSS_BUCKET: ${OSS_BUCKET:?OSS_BUCKET is required}
+      OSS_REGION: ${OSS_REGION:?OSS_REGION is required}
+      OSS_SIGNED_URL_TTL_SECONDS: ${OSS_SIGNED_URL_TTL_SECONDS:-900}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    volumes:
+      - storage_data:/app/storage
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/v1/auth/me').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  worker:
+    build:
+      <<: *app-build
+      target: worker
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      STORAGE_ROOT: /app/storage
+      TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-hirescope-tasks}
+      TASK_RECOVERY_INTERVAL_MS: ${TASK_RECOVERY_INTERVAL_MS:-30000}
+      TASK_RECOVERY_BATCH_SIZE: ${TASK_RECOVERY_BATCH_SIZE:-100}
+      TASK_RECOVERY_QUEUED_TIMEOUT_MS: ${TASK_RECOVERY_QUEUED_TIMEOUT_MS:-60000}
+      TASK_RECOVERY_PROCESSING_TIMEOUT_MS: ${TASK_RECOVERY_PROCESSING_TIMEOUT_MS:-300000}
+      TASK_RECOVERY_MAX_ATTEMPTS: ${TASK_RECOVERY_MAX_ATTEMPTS:-3}
+      ZIP_MAX_BYTES: ${ZIP_MAX_BYTES:?ZIP_MAX_BYTES is required}
+      ZIP_MAX_FILES: ${ZIP_MAX_FILES:?ZIP_MAX_FILES is required}
+      ZIP_MAX_SINGLE_FILE_BYTES: ${ZIP_MAX_SINGLE_FILE_BYTES:?ZIP_MAX_SINGLE_FILE_BYTES is required}
+      ZIP_MAX_EXTRACTED_BYTES: ${ZIP_MAX_EXTRACTED_BYTES:?ZIP_MAX_EXTRACTED_BYTES is required}
+      ZIP_MAX_DEPTH: ${ZIP_MAX_DEPTH:?ZIP_MAX_DEPTH is required}
+      ANALYSIS_MAX_TEXT_READ_BYTES: ${ANALYSIS_MAX_TEXT_READ_BYTES:?ANALYSIS_MAX_TEXT_READ_BYTES is required}
+      AI_BASE_URL: ${AI_BASE_URL:?AI_BASE_URL is required}
+      AI_API_KEY: ${AI_API_KEY:?AI_API_KEY is required}
+      AI_MODEL: ${AI_MODEL:?AI_MODEL is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    volumes:
+      - storage_data:/app/storage
+    healthcheck:
+      test: ["CMD", "node", "-e", "try{process.kill(1,0)}catch{process.exit(1)}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 60s
+    restart: unless-stopped
+
+  web:
+    build:
+      <<: *app-build
+      target: web
+      args:
+        API_ORIGIN: http://api:3001
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      API_ORIGIN: http://api:3001
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
