@@ -250,6 +250,9 @@ describe('Auth API', () => {
   });
 
   it('changes the password, revokes every session, and rejects old credentials and refresh tokens', async () => {
+    const loginRateLimitKeys = await redis.keys('auth:rate:login:*');
+    if (loginRateLimitKeys.length) await redis.del(...loginRateLimitKeys);
+
     const firstLogin = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
     const secondLogin = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: email, password });
     const oldCookie = setCookie(firstLogin).split(';')[0]!;
