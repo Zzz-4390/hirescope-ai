@@ -13,10 +13,9 @@ export class ProjectCleanupProcessor {
     if (TERMINAL.has(task.status)) return;
     if (task.project.status === ProjectStatus.DELETED) { await this.markSucceeded(task.id); return; }
     if (task.status === TaskStatus.PENDING) throw new Error('TASK_NOT_READY');
-    if (task.status === TaskStatus.QUEUED) {
-      const claimed = await this.prisma.asyncTask.updateMany({ where: { id: task.id, status: TaskStatus.QUEUED }, data: { status: TaskStatus.PROCESSING, progress: 5, attempts: { increment: 1 }, startedAt: new Date() } });
-      if (claimed.count !== 1) return;
-    }
+    if (task.status !== TaskStatus.QUEUED) return;
+    const claimed = await this.prisma.asyncTask.updateMany({ where: { id: task.id, status: TaskStatus.QUEUED }, data: { status: TaskStatus.PROCESSING, progress: 5, attempts: { increment: 1 }, startedAt: new Date() } });
+    if (claimed.count !== 1) return;
     try {
       for (const storedPath of [task.project.zipStoragePath, task.project.extractStoragePath]) {
         if (!storedPath) continue;

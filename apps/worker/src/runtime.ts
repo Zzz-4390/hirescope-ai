@@ -44,7 +44,7 @@ export function redisConnection(redisUrl: string) {
   return { host: url.hostname, port: Number(url.port || 6379), username: url.username || undefined, password: url.password || undefined, db: Number(url.pathname.slice(1) || 0) };
 }
 
-export interface RuntimeOptions { redisUrl: string; storageRoot: string; queueName?: string; recoveryBatchSize: number; recoveryIntervalMs: number; limits: ExtractionLimits; ai?: OpenAiCompatibleProviderConfig }
+export interface RuntimeOptions { redisUrl: string; storageRoot: string; queueName?: string; recoveryBatchSize: number; recoveryIntervalMs: number; recoveryQueuedTimeoutMs: number; recoveryProcessingTimeoutMs: number; recoveryMaxAttempts: number; limits: ExtractionLimits; ai?: OpenAiCompatibleProviderConfig }
 
 export function createInterviewQuestionGenerator(prisma: PrismaClient, config?: OpenAiCompatibleProviderConfig): InterviewQuestionGenerator {
   if (!config) return new DeterministicInterviewQuestionService();
@@ -87,7 +87,7 @@ export async function startWorkerRuntime(options: RuntimeOptions) {
   const codeReview = new CodeReviewProcessor(prisma, createCodeReviewGenerator(prisma, options.ai), paths, new CodeReviewContextBuilder());
   const interviewQuestions = new InterviewQuestionProcessor(prisma, createInterviewQuestionGenerator(prisma, options.ai), paths, new CodeReviewContextBuilder());
   const interviewReports = new InterviewReportProcessor(prisma, createInterviewReportGenerator(prisma, options.ai));
-  const recovery = new TaskRecoveryService(prisma, queue, options.recoveryBatchSize);
+  const recovery = new TaskRecoveryService(prisma, queue, { batchSize: options.recoveryBatchSize, queuedTimeoutMs: options.recoveryQueuedTimeoutMs, processingTimeoutMs: options.recoveryProcessingTimeoutMs, maxRecoveryAttempts: options.recoveryMaxAttempts });
   const worker = new Worker(options.queueName ?? TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup, codeReview, interviewQuestions, interviewReports), { connection, concurrency: 2 });
   worker.on('failed', (job) => console.error(`Worker job failed: ${job?.id ?? 'unknown'}`));
   await recovery.recoverBatch();

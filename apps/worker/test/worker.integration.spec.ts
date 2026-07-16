@@ -23,6 +23,8 @@ import { InterviewReportProcessor } from '../src/processors/interview-report.pro
 import { AiInterviewReportService } from '../src/interview/ai-interview-report.service';
 import { AiProviderError } from '../src/ai/openai-compatible.provider';
 
+const recoveryOptions = { batchSize: 100, queuedTimeoutMs: 60_000, processingTimeoutMs: 60_000, maxRecoveryAttempts: 3 };
+
 async function createZip(path: string, entries: Record<string, string>) {
   const zip = new ZipFile();
   for (const [name, content] of Object.entries(entries)) zip.addBuffer(Buffer.from(content), name);
@@ -100,7 +102,7 @@ describe('Project Analysis Worker integration', () => {
   it('recovers only pending tasks with deterministic BullMQ identity', async () => {
     const project = await prisma.project.create({ data: { userId, name: 'Recover', originalFileName: 'source.zip', fileSize: 4n, fileHash: 'd'.repeat(64), status: ProjectStatus.UPLOADED } });
     const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, type: TaskType.PROJECT_ANALYSIS, status: TaskStatus.PENDING } });
-    expect(await new TaskRecoveryService(prisma, queue, 100).recoverBatch()).toBe(1);
+    expect(await new TaskRecoveryService(prisma, queue, recoveryOptions).recoverBatch()).toBe(1);
     expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.QUEUED, bullJobId: task.id });
     expect((await queue.getJob(task.id))?.data).toEqual({ taskId: task.id });
   });
@@ -108,9 +110,58 @@ describe('Project Analysis Worker integration', () => {
   it('uses row locks so concurrent recovery instances claim a pending task once', async () => {
     const project = await prisma.project.create({ data: { userId, name: 'Concurrent Recovery', originalFileName: 'source.zip', fileSize: 4n, fileHash: 'f'.repeat(64), status: ProjectStatus.UPLOADED } });
     const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, type: TaskType.PROJECT_ANALYSIS, status: TaskStatus.PENDING } });
-    const results = await Promise.all([new TaskRecoveryService(prisma, queue, 100).recoverBatch(), new TaskRecoveryService(prisma, queue, 100).recoverBatch()]);
+    const results = await Promise.all([new TaskRecoveryService(prisma, queue, recoveryOptions).recoverBatch(), new TaskRecoveryService(prisma, queue, recoveryOptions).recoverBatch()]);
     expect(results.reduce((sum, value) => sum + value, 0)).toBe(1);
     expect((await queue.getJob(task.id))?.data).toEqual({ taskId: task.id });
+  });
+
+  it('requeues a stale QUEUED task after its BullMQ job is deleted without creating another AsyncTask', async () => {
+    const project = await prisma.project.create({ data: { userId, name: 'Deleted job recovery', originalFileName: 'source.zip', fileSize: 4n, fileHash: '7'.repeat(64), status: ProjectStatus.QUEUED } });
+    const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, type: TaskType.PROJECT_ANALYSIS, status: TaskStatus.QUEUED, bullJobId: randomUUID() } });
+    const job = await queue.add(TaskType.PROJECT_ANALYSIS, { taskId: task.id }, { jobId: task.id });
+    await job.remove();
+    await prisma.$executeRaw`UPDATE async_tasks SET updated_at = NOW() - INTERVAL '10 minutes' WHERE id = ${task.id}::uuid`;
+    expect(await new TaskRecoveryService(prisma, queue, recoveryOptions).recoverBatch()).toBe(1);
+    expect(await prisma.asyncTask.count({ where: { id: task.id } })).toBe(1);
+    expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.QUEUED, bullJobId: task.id, attempts: 1 });
+    expect((await queue.getJob(task.id))?.data).toEqual({ taskId: task.id });
+  });
+
+  it('does not duplicate a stale QUEUED task when its BullMQ job still exists', async () => {
+    const project = await prisma.project.create({ data: { userId, name: 'Existing job recovery', originalFileName: 'source.zip', fileSize: 4n, fileHash: '8'.repeat(64), status: ProjectStatus.QUEUED } });
+    const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, type: TaskType.PROJECT_ANALYSIS, status: TaskStatus.QUEUED, bullJobId: randomUUID() } });
+    await queue.add(TaskType.PROJECT_ANALYSIS, { taskId: task.id }, { jobId: task.id });
+    await prisma.$executeRaw`UPDATE async_tasks SET updated_at = NOW() - INTERVAL '10 minutes' WHERE id = ${task.id}::uuid`;
+    expect(await new TaskRecoveryService(prisma, queue, recoveryOptions).recoverBatch()).toBe(0);
+    expect(await prisma.asyncTask.count({ where: { id: task.id } })).toBe(1);
+    expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.QUEUED, attempts: 0 });
+  });
+
+  it('recovers an abandoned PROCESSING task after worker loss and writes one analysis result', async () => {
+    await queue.drain(true);
+    const projectId = randomUUID(); const taskId = randomUUID(); const relativeZip = `projects/${userId}/${projectId}/source.zip`; const absoluteZip = paths.resolveStoredPath(relativeZip);
+    await mkdir(join(absoluteZip, '..'), { recursive: true }); await createZip(absoluteZip, { 'src/index.ts': 'export const recovered = true;\n' });
+    await prisma.$transaction([
+      prisma.project.create({ data: { id: projectId, userId, name: 'Worker loss recovery', originalFileName: 'source.zip', zipStoragePath: relativeZip, fileSize: BigInt((await stat(absoluteZip)).size), fileHash: '9'.repeat(64), status: ProjectStatus.ANALYZING } }),
+      prisma.asyncTask.create({ data: { id: taskId, userId, projectId, type: TaskType.PROJECT_ANALYSIS, status: TaskStatus.PROCESSING, bullJobId: taskId, startedAt: new Date(Date.now() - 600_000) } }),
+    ]);
+    const abandoned = await queue.add(TaskType.PROJECT_ANALYSIS, { taskId }, { jobId: taskId }); await abandoned.remove();
+    expect(await new TaskRecoveryService(prisma, queue, { ...recoveryOptions, queuedTimeoutMs: 86_400_000 }).recoverBatch()).toBe(1);
+    const connection = redisConnection(process.env.REDIS_URL!); const events = new QueueEvents(TASK_QUEUE_NAME, { connection }); await events.waitUntilReady(); const worker = new Worker(TASK_QUEUE_NAME, createTaskHandler(prisma, analysis, cleanup), { connection }); await worker.waitUntilReady();
+    try {
+      const recovered = await queue.getJob(taskId); await recovered!.waitUntilFinished(events, 15_000);
+      expect(await prisma.asyncTask.findUnique({ where: { id: taskId } })).toMatchObject({ status: TaskStatus.SUCCEEDED, attempts: 2 });
+      expect(await prisma.projectAnalysis.count({ where: { projectId } })).toBe(1);
+      expect(await prisma.asyncTask.count({ where: { projectId, type: TaskType.PROJECT_ANALYSIS } })).toBe(1);
+    } finally { await worker.close(); await events.close(); }
+  });
+
+  it('moves an exhausted abandoned task to retryable FAILED instead of leaving it PROCESSING', async () => {
+    const project = await prisma.project.create({ data: { userId, name: 'Exhausted recovery', originalFileName: 'source.zip', fileSize: 4n, fileHash: 'a'.repeat(64), status: ProjectStatus.ANALYZING } });
+    const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, type: TaskType.PROJECT_ANALYSIS, status: TaskStatus.PROCESSING, bullJobId: randomUUID(), attempts: 3, startedAt: new Date(Date.now() - 600_000) } });
+    expect(await new TaskRecoveryService(prisma, queue, { ...recoveryOptions, queuedTimeoutMs: 86_400_000 }).recoverBatch()).toBe(0);
+    expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.FAILED, failureCode: 'TASK_RECOVERY_EXHAUSTED' });
+    expect(await prisma.project.findUnique({ where: { id: project.id } })).toMatchObject({ status: ProjectStatus.FAILED, failureCode: 'TASK_RECOVERY_EXHAUSTED' });
   });
 
   it('consumes a taskId-only BullMQ job end to end', async () => {
@@ -184,7 +235,7 @@ describe('Project Analysis Worker integration', () => {
     const project = await prisma.project.create({ data: { userId, name: 'Report Recovery', originalFileName: 'source.zip', fileSize: 4n, fileHash: '5'.repeat(64), status: ProjectStatus.COMPLETED } });
     const interview = await prisma.interview.create({ data: { userId, projectId: project.id, title: 'Recover report', status: InterviewStatus.REPORT_GENERATING, difficulty: InterviewDifficulty.EASY, questionCount: 5 } });
     const task = await prisma.asyncTask.create({ data: { userId, projectId: project.id, interviewId: interview.id, type: TaskType.INTERVIEW_REPORT_GENERATION, status: TaskStatus.PENDING } });
-    expect(await new TaskRecoveryService(prisma, queue, 100).recoverBatch()).toBe(1);
+    expect(await new TaskRecoveryService(prisma, queue, { ...recoveryOptions, queuedTimeoutMs: 86_400_000 }).recoverBatch()).toBe(1);
     expect(await prisma.asyncTask.findUnique({ where: { id: task.id } })).toMatchObject({ status: TaskStatus.QUEUED, bullJobId: task.id });
     expect((await queue.getJob(task.id))?.data).toEqual({ taskId: task.id });
   });
