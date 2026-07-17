@@ -3,30 +3,34 @@ import { authConfiguration } from './configuration';
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalCookieName = process.env.AUTH_COOKIE_NAME;
+const originalCookieSecure = process.env.AUTH_COOKIE_SECURE;
 const originalOrigins = process.env.CORS_ALLOWED_ORIGINS;
 
 afterEach(() => {
   restore('NODE_ENV', originalNodeEnv);
   restore('AUTH_COOKIE_NAME', originalCookieName);
+  restore('AUTH_COOKIE_SECURE', originalCookieSecure);
   restore('CORS_ALLOWED_ORIGINS', originalOrigins);
 });
 
 describe('authConfiguration', () => {
-  it('uses non-secure cookies only in development', () => {
-    process.env.NODE_ENV = 'development';
+  it('uses non-secure cookies when explicitly configured in production', () => {
+    process.env.NODE_ENV = 'production';
     process.env.AUTH_COOKIE_NAME = 'hirescope_refresh';
-    process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:4200,http://127.0.0.1:4200';
+    process.env.AUTH_COOKIE_SECURE = 'false';
+    process.env.CORS_ALLOWED_ORIGINS = 'http://114.55.102.140:3000';
 
     expect(authConfiguration()).toMatchObject({
       cookieName: 'hirescope_refresh',
       secureCookies: false,
-      allowedOrigins: ['http://localhost:4200', 'http://127.0.0.1:4200'],
+      allowedOrigins: ['http://114.55.102.140:3000'],
     });
   });
 
-  it('keeps cookies secure outside development', () => {
-    process.env.NODE_ENV = 'production';
+  it('uses secure cookies when explicitly configured in development', () => {
+    process.env.NODE_ENV = 'development';
     process.env.AUTH_COOKIE_NAME = '__Secure-hirescope_refresh';
+    process.env.AUTH_COOKIE_SECURE = 'true';
     process.env.CORS_ALLOWED_ORIGINS = 'https://app.example.com';
 
     expect(authConfiguration()).toMatchObject({

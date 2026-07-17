@@ -105,6 +105,7 @@ jobs:
             printf 'JWT_AUDIENCE=hirescope-web\n'
             printf 'AUTH_REFRESH_HASH_SECRET=%s\n' "$AUTH_REFRESH_HASH_SECRET"
             printf 'AUTH_REFRESH_TTL_SECONDS=2592000\n'
+            printf 'AUTH_COOKIE_SECURE=true\n'
             printf 'AUTH_COOKIE_NAME=__Secure-hirescope_refresh\n'
             printf 'AUTH_DUMMY_PASSWORD_HASH=%s\n' "$AUTH_DUMMY_PASSWORD_HASH"
             printf 'AUTH_ARGON2_MEMORY_KIB=19456\n'
@@ -170,6 +171,8 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Browser E2E tests
+        env:
+          AUTH_COOKIE_SECURE: "false"
         run: pnpm test:e2e
 
       - name: Database constraint tests

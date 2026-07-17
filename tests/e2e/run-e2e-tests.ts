@@ -37,6 +37,7 @@ const environment: NodeJS.ProcessEnv = {
   JWT_AUDIENCE: "hirescope-web",
   AUTH_REFRESH_HASH_SECRET: "playwright-refresh-secret-at-least-32-bytes",
   AUTH_REFRESH_TTL_SECONDS: "2592000",
+  AUTH_COOKIE_SECURE: "false",
   AUTH_COOKIE_NAME: "hirescope_e2e_refresh",
   AUTH_DUMMY_PASSWORD_HASH: "$argon2id$v=19$m=19456,t=2,p=1$EEPZnPvCwY5nfeXzD1KhIw$FhWXIFWMOeq3j3hNz5lERJAaD+u4VotBV8upTgifPcE",
   AUTH_ARGON2_MEMORY_KIB: "19456",

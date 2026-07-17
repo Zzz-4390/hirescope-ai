@@ -81,7 +81,7 @@ pnpm --filter @hirescope/web dev -- --port 4200
 
 ## 生产 Docker 启动
 
-这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。部署前先把反向代理和持久化备份纳入运行环境。
+这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。当前示例支持通过 `http://114.55.102.140:3000` 直接访问；上线后仍建议尽快接入 TLS 和持久化备份。
 
 1. 创建真实生产环境文件并设置仅属主可读权限：
 
@@ -91,7 +91,7 @@ pnpm --filter @hirescope/web dev -- --port 4200
    ```
 
 2. 替换全部示例占位值，包括 `replace_with_*` 和 `replace-with-private-bucket`；保证 `POSTGRES_PASSWORD` 与 `DATABASE_URL`、`REDIS_PASSWORD` 与 `REDIS_URL` 一致。URL 中的特殊字符必须进行 percent-encoding。OSS 应使用私有 Bucket 和仅允许头像对象读写的最小权限凭据。
-3. 将 `CORS_ALLOWED_ORIGINS` 改为对外 HTTPS 精确源；`TRUST_PROXY_HOPS` 必须等于到可信入口代理的实际跳数。保持 `WEB_BIND_ADDRESS=127.0.0.1`，由同机反向代理终止 TLS。
+3. 直连公网 IP 时使用 `CORS_ALLOWED_ORIGINS=http://114.55.102.140:3000`、`AUTH_COOKIE_SECURE=false`、`AUTH_COOKIE_NAME=hirescope_refresh`、`TRUST_PROXY_HOPS=0` 和 `WEB_BIND_ADDRESS=0.0.0.0`。若改为 HTTPS 反向代理，则把 Origin 改为精确 HTTPS 地址，设置 `AUTH_COOKIE_SECURE=true`、使用 `__Secure-` Cookie 名，并让 `TRUST_PROXY_HOPS` 等于可信代理的实际跳数。
 4. 校验配置并构建镜像：
 
    ```bash
@@ -108,7 +108,7 @@ pnpm --filter @hirescope/web dev -- --port 4200
    docker compose --env-file .env.production -f docker-compose.prod.yml ps
    ```
 
-6. 通过反向代理访问站点，并检查容器日志：
+6. 访问 `http://114.55.102.140:3000`，并检查容器日志：
 
    ```bash
    docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=200 api worker web
@@ -140,9 +140,9 @@ pnpm --filter @hirescope/web dev -- --port 4200
 | DeepSeek | `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` |
 | Aliyun OSS | `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_BUCKET`、`OSS_REGION`、`OSS_SIGNED_URL_TTL_SECONDS` |
 | API / 代理 | `NODE_ENV`、`API_HOST`、`API_PORT`、`API_ORIGIN`、`CORS_ALLOWED_ORIGINS`、`TRUST_PROXY_HOPS` |
-| Auth | `JWT_*`、`AUTH_REFRESH_*`、`AUTH_COOKIE_NAME`、`AUTH_DUMMY_PASSWORD_HASH`、`AUTH_ARGON2_*`、`AUTH_*_WINDOW_SECONDS`、`AUTH_*_MAX_REQUESTS` |
+| Auth | `JWT_*`、`AUTH_REFRESH_*`、`AUTH_COOKIE_SECURE`、`AUTH_COOKIE_NAME`、`AUTH_DUMMY_PASSWORD_HASH`、`AUTH_ARGON2_*`、`AUTH_*_WINDOW_SECONDS`、`AUTH_*_MAX_REQUESTS` |
 
-`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` 必须同时设置。生产配置使用 `NODE_ENV=production` 和 `__Secure-` Cookie 名称，因此对外访问必须是 HTTPS。
+`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` 必须同时设置。Cookie 安全策略由 `AUTH_COOKIE_SECURE` 显式控制，不再由 `NODE_ENV` 推断。HTTP Origin 必须显式包含端口，并搭配 `AUTH_COOKIE_SECURE=false` 和不带 `__Secure-` 前缀的 Cookie 名；CORS 始终使用精确白名单并保留凭据，禁止 `*`。HTTP 会明文传输会话流量，仅适合作为当前部署过渡方案。
 
 ## 验证与测试
 
