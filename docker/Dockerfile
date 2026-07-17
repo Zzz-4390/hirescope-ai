@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1.7
+# BuildKit cache mounts are used below. Intentionally use the frontend bundled
+# with the Docker daemon so builds do not depend on pulling docker/dockerfile.
 
 FROM node:22-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm
@@ -16,19 +17,25 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
 FROM dependencies AS build
 ARG API_ORIGIN=http://api:3001
+ARG NODE_MAX_OLD_SPACE_SIZE=4096
 ENV API_ORIGIN=$API_ORIGIN
 COPY . .
-RUN pnpm db:generate \
+RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
+    export NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" \
+    && pnpm db:generate \
     && pnpm --filter @hirescope/shared-types build \
     && pnpm --filter @hirescope/api build \
     && pnpm --filter @hirescope/worker build \
-    && pnpm --filter @hirescope/web build \
-    && pnpm --filter @hirescope/api deploy --prod --legacy /out/api \
+    && pnpm --filter @hirescope/web build
+
+FROM build AS deploy
+RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
+    pnpm --filter @hirescope/api deploy --prod --legacy /out/api \
     && pnpm --filter @hirescope/worker deploy --prod --legacy /out/worker \
     && generated_client="$(dirname "$(dirname "$(readlink -f node_modules/@prisma/client)")")/.prisma/client" \
     && api_client="$(dirname "$(dirname "$(readlink -f /out/api/node_modules/@prisma/client)")")/.prisma/client" \
@@ -54,7 +61,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1001 hirescope \
     && useradd --system --uid 1001 --gid hirescope --home-dir /app hirescope
-COPY --from=build --chown=hirescope:hirescope /out/api ./
+COPY --from=deploy --chown=hirescope:hirescope /out/api ./
 USER hirescope
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
@@ -67,7 +74,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1001 hirescope \
     && useradd --system --uid 1001 --gid hirescope --home-dir /app hirescope
-COPY --from=build --chown=hirescope:hirescope /out/worker ./
+COPY --from=deploy --chown=hirescope:hirescope /out/worker ./
 USER hirescope
 CMD ["node", "dist/main.js"]
 
