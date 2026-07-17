@@ -171,6 +171,8 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Browser E2E tests
+        env:
+          AUTH_COOKIE_SECURE: "false"
         run: pnpm test:e2e
 
       - name: Database constraint tests
