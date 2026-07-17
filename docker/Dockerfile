@@ -22,7 +22,7 @@ RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
 
 FROM dependencies AS build
 ARG API_ORIGIN=http://api:3001
-ARG NODE_MAX_OLD_SPACE_SIZE=4096
+ARG NODE_MAX_OLD_SPACE_SIZE=1536
 ENV API_ORIGIN=$API_ORIGIN
 COPY . .
 RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
