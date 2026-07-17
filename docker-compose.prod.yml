@@ -3,6 +3,8 @@ name: hirescope-ai
 x-app-build: &app-build
   context: .
   dockerfile: docker/Dockerfile
+  args:
+    NODE_MAX_OLD_SPACE_SIZE: ${DOCKER_BUILD_NODE_MAX_OLD_SPACE_SIZE:-1536}
 
 services:
   postgres:
@@ -161,6 +163,7 @@ services:
       target: web
       args:
         API_ORIGIN: http://api:3001
+        NODE_MAX_OLD_SPACE_SIZE: ${DOCKER_BUILD_NODE_MAX_OLD_SPACE_SIZE:-1536}
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
