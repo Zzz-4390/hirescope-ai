@@ -31,8 +31,8 @@ describe('Auth API', () => {
   const email = 'auth-e2e@example.com';
   const username = 'auth_e2e_user';
   const password = 'StrongPassword123!';
-  const origin = 'https://localhost:4300';
-  const loopbackOrigin = 'https://127.0.0.1:4300';
+  const origin = 'http://114.55.102.140:3000';
+  const loopbackOrigin = 'http://127.0.0.1:4300';
   const objectStorage = new InMemoryObjectStorage();
 
   function setCookie(response: request.Response): string {
@@ -104,13 +104,13 @@ describe('Auth API', () => {
     expect(wrong.body.error.message).toBe('用户名、邮箱或密码错误');
   });
 
-  it('logs in by username and email, sets a secure cookie, and returns the current user', async () => {
+  it('logs in by username and email, sets an HTTP-compatible cookie, and returns the current user', async () => {
     const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ identifier: username, password });
     expect(login.status).toBe(200);
     expect(login.body.expiresIn).toBe(900);
-    expect(setCookie(login)).toContain('__Secure-hirescope_refresh=');
+    expect(setCookie(login)).toContain('hirescope_refresh=');
     expect(setCookie(login)).toContain('HttpOnly');
-    expect(setCookie(login)).toContain('Secure');
+    expect(setCookie(login)).not.toContain('Secure');
     expect(setCookie(login)).toContain('SameSite=Lax');
     const me = await request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${login.body.accessToken}`);
     expect(me.status).toBe(200);
@@ -173,6 +173,10 @@ describe('Auth API', () => {
     const oldCookie = setCookie(login).split(';')[0]!;
     const rotated = await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', origin).set('Cookie', oldCookie);
     expect(rotated.status).toBe(200);
+    expect(setCookie(rotated)).toContain('hirescope_refresh=');
+    expect(setCookie(rotated)).toContain('HttpOnly');
+    expect(setCookie(rotated)).not.toContain('Secure');
+    expect(setCookie(rotated)).toContain('SameSite=Lax');
     const newCookie = setCookie(rotated).split(';')[0]!;
     expect(newCookie).not.toBe(oldCookie);
     const replay = await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Origin', origin).set('Cookie', oldCookie);
@@ -219,11 +223,11 @@ describe('Auth API', () => {
     const logout = await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', origin).set('Cookie', cookie);
     expect(logout.status).toBe(204);
     const clearedCookie = setCookie(logout);
-    expect(clearedCookie).toContain('__Secure-hirescope_refresh=;');
+    expect(clearedCookie).toContain('hirescope_refresh=;');
     expect(clearedCookie).toContain('Path=/api/v1/auth');
     expect(clearedCookie).toContain('Expires=Thu, 01 Jan 1970');
     expect(clearedCookie).toContain('HttpOnly');
-    expect(clearedCookie).toContain('Secure');
+    expect(clearedCookie).not.toContain('Secure');
     expect(clearedCookie).toContain('SameSite=Lax');
     expect(await redis.exists(redisKey)).toBe(0);
 
@@ -241,7 +245,7 @@ describe('Auth API', () => {
     expect(await redis.keys('auth:rate:refresh:ip:*')).not.toHaveLength(0);
   });
 
-  it('only grants CORS to an exact configured HTTPS origin', async () => {
+  it('only grants credentialed CORS to an exact configured public HTTP origin', async () => {
     const allowed = await request(app.getHttpServer()).options('/api/v1/auth/login').set('Origin', origin).set('Access-Control-Request-Method', 'POST');
     expect(allowed.headers['access-control-allow-origin']).toBe(origin);
     expect(allowed.headers['access-control-allow-credentials']).toBe('true');
@@ -266,7 +270,7 @@ describe('Auth API', () => {
       .send({ currentPassword: password, newPassword: 'NewStrongPassword456!', confirmPassword: 'NewStrongPassword456!' });
 
     expect(changed.status).toBe(204);
-    expect(setCookie(changed)).toContain('__Secure-hirescope_refresh=;');
+    expect(setCookie(changed)).toContain('hirescope_refresh=;');
     expect(await redis.keys(`auth:user-sessions:v1:${user.id}`)).toHaveLength(0);
     const remainingSessionKeys = await redis.keys('auth:session:v1:*');
     for (const key of remainingSessionKeys) {

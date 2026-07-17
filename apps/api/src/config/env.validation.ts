@@ -18,6 +18,13 @@ function integerInRange(env: Environment, name: string, minimum: number, maximum
   return value;
 }
 
+function boolean(env: Environment, name: string): boolean {
+  const value = requiredString(env, name);
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${name} must be true or false`);
+}
+
 export function validateEnvironment(env: Environment): Record<string, unknown> {
   const jwtSecret = requiredString(env, 'JWT_ACCESS_SECRET');
   const refreshSecret = requiredString(env, 'AUTH_REFRESH_HASH_SECRET');
@@ -25,7 +32,7 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
     throw new Error('Auth secrets must be distinct and at least 32 characters');
   }
 
-  const nodeEnv = typeof env.NODE_ENV === 'string' ? env.NODE_ENV : 'production';
+  const secureCookies = boolean(env, 'AUTH_COOKIE_SECURE');
   const origins = requiredString(env, 'CORS_ALLOWED_ORIGINS').split(',').map((value) => value.trim());
   const invalidOrigin = origins.some((origin) => {
     if (!origin || origin === '*') return true;
@@ -33,22 +40,21 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
       const parsed = new URL(origin);
       if (parsed.origin !== origin) return true;
       if (parsed.protocol === 'https:') return false;
-      return !(
-        nodeEnv === 'development'
-        && parsed.protocol === 'http:'
-        && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
-      );
+      return parsed.protocol !== 'http:' || parsed.port.length === 0;
     } catch {
       return true;
     }
   });
   if (invalidOrigin) {
-    throw new Error('CORS_ALLOWED_ORIGINS must be an exact origin allowlist; development may use explicit HTTP localhost or 127.0.0.1 ports');
+    throw new Error('CORS_ALLOWED_ORIGINS must be an exact HTTP(S) origin allowlist; HTTP origins require an explicit port');
+  }
+  if (secureCookies && origins.some((origin) => origin.startsWith('http://'))) {
+    throw new Error('AUTH_COOKIE_SECURE must be false when CORS_ALLOWED_ORIGINS contains an HTTP origin');
   }
 
   const cookieName = requiredString(env, 'AUTH_COOKIE_NAME');
-  if (nodeEnv === 'development' && cookieName.startsWith('__Secure-')) {
-    throw new Error('AUTH_COOKIE_NAME must not use the __Secure- prefix for localhost HTTP development');
+  if (!secureCookies && cookieName.startsWith('__Secure-')) {
+    throw new Error('AUTH_COOKIE_NAME must not use the __Secure- prefix when AUTH_COOKIE_SECURE is false');
   }
 
   const dummyHash = requiredString(env, 'AUTH_DUMMY_PASSWORD_HASH');
@@ -91,6 +97,7 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
     OSS_BUCKET: ossBucket,
     OSS_REGION: ossRegion,
     OSS_SIGNED_URL_TTL_SECONDS: integerInRange(env, 'OSS_SIGNED_URL_TTL_SECONDS', 60, 3600),
+    AUTH_COOKIE_SECURE: secureCookies,
     CORS_ALLOWED_ORIGINS: origins,
   };
 }

@@ -26,8 +26,9 @@ const environment = {
   DATABASE_URL: databaseUrl,
   REDIS_URL: redisUrl,
   STORAGE_ROOT: testStorageRoot,
-  CORS_ALLOWED_ORIGINS: 'https://localhost:4300,https://127.0.0.1:4300',
-  AUTH_COOKIE_NAME: '__Secure-hirescope_refresh',
+  CORS_ALLOWED_ORIGINS: 'http://114.55.102.140:3000,http://127.0.0.1:4300',
+  AUTH_COOKIE_SECURE: 'false',
+  AUTH_COOKIE_NAME: 'hirescope_refresh',
   OSS_ACCESS_KEY_ID: 'test-access-key-id',
   OSS_ACCESS_KEY_SECRET: 'test-access-key-secret-value',
   OSS_BUCKET: 'hirescope-test-private',
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
   await redisClient.connect();
   await redisClient.flushdb();
   await redisClient.quit();
-  run(['exec', 'vitest', 'run', 'apps/api/test', '--maxWorkers=1']);
+  run(['--filter', '@hirescope/api', 'exec', 'vitest', 'run', 'test', '--maxWorkers=1']);
 }
 
 void main();

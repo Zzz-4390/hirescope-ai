@@ -9,7 +9,7 @@ const validEnvironment = {
   JWT_ACCESS_SECRET: 'a'.repeat(32), JWT_ACCESS_TTL_SECONDS: '900',
   JWT_ISSUER: 'hirescope-api', JWT_AUDIENCE: 'hirescope-web',
   AUTH_REFRESH_HASH_SECRET: 'b'.repeat(32), AUTH_REFRESH_TTL_SECONDS: '2592000',
-  AUTH_COOKIE_NAME: '__Secure-hirescope_refresh',
+  AUTH_COOKIE_SECURE: 'true', AUTH_COOKIE_NAME: '__Secure-hirescope_refresh',
   AUTH_DUMMY_PASSWORD_HASH: '$argon2id$v=19$m=19456,t=2,p=1$EEPZnPvCwY5nfeXzD1KhIw$FhWXIFWMOeq3j3hNz5lERJAaD+u4VotBV8upTgifPcE',
   AUTH_ARGON2_MEMORY_KIB: '19456', AUTH_ARGON2_TIME_COST: '2', AUTH_ARGON2_PARALLELISM: '1',
   AUTH_REGISTER_WINDOW_SECONDS: '3600', AUTH_REGISTER_MAX_REQUESTS: '5',
@@ -27,33 +27,44 @@ describe('validateEnvironment', () => {
       API_PORT: 3001,
       REDIS_COMMAND_TIMEOUT_MS: 5000,
       JWT_ACCESS_TTL_SECONDS: 900,
+      AUTH_COOKIE_SECURE: true,
       CORS_ALLOWED_ORIGINS: ['https://localhost:3000'],
       OSS_SIGNED_URL_TTL_SECONDS: 900,
     });
   });
 
-  it('rejects wildcard or insecure frontend origins', () => {
+  it('rejects wildcard and malformed frontend origins', () => {
     expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: '*' })).toThrow();
-    expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'http://localhost:3000' })).toThrow();
+    expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'ftp://app.example.com' })).toThrow();
+    expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'http://114.55.102.140' })).toThrow();
   });
 
-  it('accepts explicitly configured localhost and 127.0.0.1 HTTP ports only in development', () => {
+  it('accepts an explicit public HTTP origin and normal cookie name in production', () => {
     expect(validateEnvironment({
       ...validEnvironment,
-      NODE_ENV: 'development',
-      CORS_ALLOWED_ORIGINS: 'http://localhost:4200,http://127.0.0.1:4200,https://app.example.com',
+      NODE_ENV: 'production',
+      CORS_ALLOWED_ORIGINS: 'http://114.55.102.140:3000',
+      AUTH_COOKIE_SECURE: 'false',
       AUTH_COOKIE_NAME: 'hirescope_refresh',
     })).toMatchObject({
-      CORS_ALLOWED_ORIGINS: ['http://localhost:4200', 'http://127.0.0.1:4200', 'https://app.example.com'],
+      AUTH_COOKIE_SECURE: false,
+      CORS_ALLOWED_ORIGINS: ['http://114.55.102.140:3000'],
     });
+  });
+
+  it('rejects invalid or internally inconsistent cookie security settings', () => {
     expect(() => validateEnvironment({
       ...validEnvironment,
-      CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:4200',
-    })).toThrow();
+      AUTH_COOKIE_SECURE: 'yes',
+    })).toThrow('AUTH_COOKIE_SECURE must be true or false');
     expect(() => validateEnvironment({
       ...validEnvironment,
-      NODE_ENV: 'development',
-      CORS_ALLOWED_ORIGINS: 'http://localhost:3000',
+      CORS_ALLOWED_ORIGINS: 'http://114.55.102.140:3000',
+    })).toThrow('AUTH_COOKIE_SECURE must be false');
+    expect(() => validateEnvironment({
+      ...validEnvironment,
+      CORS_ALLOWED_ORIGINS: 'http://114.55.102.140:3000',
+      AUTH_COOKIE_SECURE: 'false',
       AUTH_COOKIE_NAME: '__Secure-hirescope_refresh',
     })).toThrow('AUTH_COOKIE_NAME must not use the __Secure- prefix');
   });

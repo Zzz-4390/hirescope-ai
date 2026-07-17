@@ -12,7 +12,7 @@ export function authConfiguration(): AuthConfig {
     refreshHashSecret: process.env.AUTH_REFRESH_HASH_SECRET!,
     refreshTtlSeconds: number('AUTH_REFRESH_TTL_SECONDS'),
     cookieName: process.env.AUTH_COOKIE_NAME!,
-    secureCookies: process.env.NODE_ENV !== 'development',
+    secureCookies: process.env.AUTH_COOKIE_SECURE === 'true',
     dummyPasswordHash: process.env.AUTH_DUMMY_PASSWORD_HASH!,
     argon2: {
       memoryCost: number('AUTH_ARGON2_MEMORY_KIB'),
