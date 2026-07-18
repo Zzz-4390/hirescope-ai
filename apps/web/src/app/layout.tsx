@@ -2,17 +2,10 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { DesktopScaleLayout } from "../components/DesktopScaleLayout";
+import { themeInitializationScript } from "../lib/theme";
 import { AuthSessionBoundary } from "../components/AuthSessionBoundary";
-import "./globals.css";
 
-const themeInitializationScript = `(() => {
-  try {
-    const storedTheme = localStorage.getItem("hirescope-theme");
-    document.documentElement.dataset.theme = storedTheme === "dark" ? "dark" : "light";
-  } catch {
-    document.documentElement.dataset.theme = "light";
-  }
-})();`;
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "码途 AI | 让项目能力被看见",
