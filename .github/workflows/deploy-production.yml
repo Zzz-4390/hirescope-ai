@@ -127,7 +127,7 @@ jobs:
           export COMPOSE_PARALLEL_LIMIT=1
           "${compose[@]}" --profile migration build migrate api worker web
           "${compose[@]}" --profile migration run --rm migrate
-          "${compose[@]}" up -d --remove-orphans
+          "${compose[@]}" up -d --remove-orphans --force-recreate api worker web
 
           wait_for_services() {
             local deadline=$((SECONDS + 300))
