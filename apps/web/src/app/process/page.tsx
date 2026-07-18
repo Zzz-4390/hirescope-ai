@@ -29,7 +29,6 @@ import type { ComponentType, SVGProps } from "react";
 
 import { Logo } from "../../components/Logo";
 import { ProcessRevealManager } from "../../components/ProcessRevealManager";
-import { PublicSiteLayout } from "../../components/PublicSiteLayout";
 import { SiteHeader } from "../../components/SiteHeader";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -143,7 +142,7 @@ function ShareMockup() {
 
 export default function ProcessPage() {
   return (
-    <PublicSiteLayout><SiteHeader current="process" /><main className="process-page"><ProcessRevealManager />
+    <><SiteHeader current="process" /><main className="process-page"><ProcessRevealManager />
       <section className="process-hero process-reveal-section is-visible">
         <div className="process-container process-hero-grid">
           <div className="process-hero-copy" data-process-reveal-item><span>使用流程</span><h1>从上传项目到生成报告，<br/>清晰走完整个评估流程</h1><p>码途 AI 通过项目解析、智能分析、代码审查与模拟面试，把真实项目转化为可验证、可分享的能力证明。</p><div className="process-highlights">{processHighlights.map(([IconComponent, title, text]) => <div key={title}><IconComponent/><span><b>{title}</b><small>{text}</small></span></div>)}</div></div>
@@ -164,6 +163,6 @@ export default function ProcessPage() {
       <section className="process-closure process-reveal-section"><div className="process-container"><div className="closure-heading" data-process-reveal-item><span>完整评估闭环</span><h2>一次项目提交，形成可持续提升的能力闭环</h2><p>项目输入、AI 评估、针对性面试、能力报告和安全分享彼此衔接，每一步都有依据、每次改进都可追踪。</p></div><div className="closure-flow" data-process-reveal-item data-process-reveal-delay="2">{[[CloudUpload,"项目输入"],[SearchCode,"结构解析"],[BrainCircuit,"智能评估"],[Target,"改进建议"],[FileCheck2,"报告沉淀"],[Send,"授权分享"]].map(([IconComponent,label],index) => { const StepIcon=IconComponent as Icon; return <div key={label as string}><i><StepIcon/></i><b>{label as string}</b>{index < 5 && <ArrowRight/>}</div>; })}</div></div></section>
 
       <section className="process-bottom process-reveal-section"><div className="process-container process-bottom-grid"><div className="process-faq" data-process-reveal-item><h3>常见问题</h3>{["支持 GitHub 仓库或代码仓库吗？","AI 评估题会重复吗？","模拟面试可以重新进行吗？","报告可以导出或对外分享吗？"].map((item) => <div key={item}>{item}<ChevronDown /></div>)}</div><div className="process-cta" data-process-reveal-item data-process-reveal-delay="2"><div><h2>准备开始你的第一次项目能力评估了吗？</h2><p>只需上传项目，即可获得专业的 AI 评估报告，让你的技术能力被更准确地看见。</p><span><Link href="/login">立即体验 <ArrowRight /></Link><Link className="secondary-cta" href="/reports">查看报告示例 <ArrowRight /></Link></span></div><div className="cta-art"><BarChart3/><FileText/><ShieldCheck/></div></div></div><footer className="process-footer"><div><Logo/><p>让每一次技术评估，更客观、更高效、更有价值。</p></div><dl><div><dt>产品</dt><dd>产品能力</dd><dd>使用流程</dd><dd>报告示例</dd></div><div><dt>资源</dt><dd>帮助中心</dd><dd>常见问题</dd><dd>隐私与安全</dd></div><div><dt>关于我们</dt><dd>关于码途 AI</dd><dd>联系我们</dd><dd>加入我们</dd></div></dl><small>© 2026 码途 AI · HireScope AI</small></footer></section>
-    </main></PublicSiteLayout>
+    </main></>
   );
 }

@@ -33,7 +33,6 @@ import type { ComponentType, SVGProps } from "react";
 
 import { CapabilitiesRevealManager } from "../../components/CapabilitiesRevealManager";
 import { Logo } from "../../components/Logo";
-import { PublicSiteLayout } from "../../components/PublicSiteLayout";
 import { SiteHeader } from "../../components/SiteHeader";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -201,7 +200,7 @@ function AdminPanel() {
 
 export default function CapabilitiesPage() {
   return (
-    <PublicSiteLayout><SiteHeader current="capabilities" /><main className="capabilities-page"><CapabilitiesRevealManager />
+    <><SiteHeader current="capabilities" /><main className="capabilities-page"><CapabilitiesRevealManager />
       <section className="cap-hero cap-reveal-section is-visible">
         <div className="cap-container cap-hero-grid"><div className="cap-hero-copy"><span data-cap-reveal-item>产品能力</span><h1 data-cap-reveal-item data-cap-reveal-delay="1" aria-label={HERO_TITLE}>从项目审查到<span className="cap-title-nowrap">能力报告</span>，<br/>形成完整评估闭环</h1><p data-cap-reveal-item data-cap-reveal-delay="2">码途 AI 连接项目解析、代码审查、模拟面试、能力报告与分享授权，让每个技术项目都能被准确理解、公正评估、清晰呈现。</p><div className="hero-benefits" data-cap-reveal-item data-cap-reveal-delay="3">{heroBenefits.map(({icon:IconComponent,title,text}) => <div key={title}><IconComponent/><span><strong>{title}</strong><small>{text}</small></span></div>)}</div></div><div className="process-card" data-cap-reveal-item data-cap-reveal-delay="4">{processSteps.map(({icon:IconComponent,title},index) => <div className="process-step" key={title}><i><IconComponent /></i><small>{String(index + 1).padStart(2,"0")}</small><strong>{title}</strong></div>)}<div className="process-track"><i/><i/><i/><i/><i/><i/></div><div className="process-loop"><span>完整评估闭环</span></div></div></div>
       </section>
@@ -215,6 +214,6 @@ export default function CapabilitiesPage() {
       <section className="cap-dual-section cap-reveal-section"><div className="cap-container dual-grid"><div data-cap-reveal-item><SectionCopy number="06" label="面试官辅助评估" title="为面试官提供高效评估辅助" description="快速把握候选人项目与特点，AI 提供评估建议与面试问题参考。" features={[]}/><CandidatePanel /></div><div data-cap-reveal-item data-cap-reveal-delay="4"><SectionCopy number="07" label="管理员配置" title="灵活配置与数据洞察" description="管理员可配置评估模板、管理用户与项目、洞察使用数据。" features={[]}/><AdminPanel /></div></div></section>
 
       <section className="cap-bottom cap-reveal-section"><div className="cap-container"><div className="cap-cta" data-cap-reveal-item><Logo compact/><div><h2>从项目到面试，从能力到报告</h2><p>码途 AI 让技术能力被准确理解，让优秀人才脱颖而出。</p></div><div><Link href="/login">立即体验</Link><Link className="secondary-cta" href="/process">查看使用流程 <ArrowRight /></Link></div></div><footer className="cap-footer" data-cap-reveal-item data-cap-reveal-delay="2"><div><Logo /><p>让项目能力被看见，让优秀人才脱颖而出。</p><small>© 2026 码途 AI. All rights reserved.</small></div><dl><div><dt>产品</dt><dd>产品能力</dd><dd>使用流程</dd><dd>报告示例</dd></div><div><dt>资源</dt><dd>帮助中心</dd><dd>常见问题</dd><dd>更新日志</dd></div><div><dt>关于我们</dt><dd>关于我们</dd><dd>加入我们</dd><dd>联系我们</dd></div><div><dt>关注我们</dt><dd>微信　GitHub　LinkedIn</dd></div></dl></footer></div></section>
-    </main></PublicSiteLayout>
+    </main></>
   );
 }

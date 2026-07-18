@@ -29,7 +29,7 @@ describe("authenticated two-layer navigation styles", () => {
     expect(dashboardStyles.lastIndexOf(".toolbar{position:fixed")).toBeGreaterThan(dashboardStyles.lastIndexOf(".toolbar{position:sticky"));
     expect(dashboardStyles).not.toContain(".toolbar{position:fixed;z-index:90;top:0");
     expect(dashboardStyles).toContain(".welcome{padding:32px016px}");
-    expect(dashboardStyles).toContain(".dashboardLoading{min-height:calc(100dvh-var(--app-primary-header-height)-var(--app-context-bar-height))");
+    expect(dashboardStyles).toContain(".dashboardLoading{min-height:calc(var(--desktop-layout-dynamic-height,100dvh)-var(--app-primary-header-height)-var(--app-context-bar-height))");
     expect(dashboardStyles).toContain(".emptyTrackLayout{display:grid;grid-template-columns:minmax(0,1fr)230px");
   });
 });

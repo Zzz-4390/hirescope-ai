@@ -67,7 +67,7 @@
 .dashboardPage{width:min(calc(100% - var(--app-page-gutter) - var(--app-page-gutter)),var(--app-content-max-width));margin:0 auto;padding:0 0 40px}
 .toolbar{padding:0}
 .toolbarInner{width:min(calc(100% - var(--app-page-gutter) - var(--app-page-gutter)),var(--app-content-max-width))}
-.dashboardLoading{min-height:calc(100dvh - var(--app-primary-header-height) - var(--app-context-bar-height))}
+.dashboardLoading{min-height:calc(var(--desktop-layout-dynamic-height,100dvh) - var(--app-primary-header-height) - var(--app-context-bar-height))}
 .emptyContent{padding-top:32px}
 .emptyTrackLayout{display:grid;grid-template-columns:minmax(0,1fr) 230px}
 @media(min-width:901px){.welcome{padding:32px 0 16px}}
