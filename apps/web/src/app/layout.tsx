@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { themeInitializationScript } from "../lib/theme";
+import { AuthSessionBoundary } from "../components/AuthSessionBoundary";
 
 import "./globals.css";
 
@@ -16,7 +17,10 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitializationScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <AuthSessionBoundary />
+        {children}
+      </body>
     </html>
   );
 }
