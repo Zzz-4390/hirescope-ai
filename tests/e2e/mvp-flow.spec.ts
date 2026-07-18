@@ -151,7 +151,7 @@ test("MVP 主流程可恢复、可重试且跨会话持久化", async ({ page, c
   });
   expect(logoutResponse.status()).toBe(204);
   expect((await logoutResponse.allHeaders())["set-cookie"]).toContain("Expires=Thu, 01 Jan 1970");
-  await expect(page).toHaveURL(`${baseURL}/`);
+  await expect(page).toHaveURL(`${baseURL}/login`);
   expect((await context.cookies(`${baseURL}/api/v1/auth/refresh`)).some((cookie) => cookie.name === "hirescope_e2e_refresh")).toBe(false);
 
   const staleSession = await requestFactory.newContext({

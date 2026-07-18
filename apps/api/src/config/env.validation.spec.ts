@@ -36,19 +36,18 @@ describe('validateEnvironment', () => {
   it('rejects wildcard and malformed frontend origins', () => {
     expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: '*' })).toThrow();
     expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'ftp://app.example.com' })).toThrow();
-    expect(() => validateEnvironment({ ...validEnvironment, CORS_ALLOWED_ORIGINS: 'http://114.55.102.140' })).toThrow();
   });
 
   it('accepts an explicit public HTTP origin and normal cookie name in production', () => {
     expect(validateEnvironment({
       ...validEnvironment,
       NODE_ENV: 'production',
-      CORS_ALLOWED_ORIGINS: 'http://114.55.102.140:3000',
+      CORS_ALLOWED_ORIGINS: 'http://114.55.102.140',
       AUTH_COOKIE_SECURE: 'false',
       AUTH_COOKIE_NAME: 'hirescope_refresh',
     })).toMatchObject({
       AUTH_COOKIE_SECURE: false,
-      CORS_ALLOWED_ORIGINS: ['http://114.55.102.140:3000'],
+      CORS_ALLOWED_ORIGINS: ['http://114.55.102.140'],
     });
   });
 

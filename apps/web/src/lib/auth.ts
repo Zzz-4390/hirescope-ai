@@ -78,8 +78,11 @@ export async function changePassword(input: {
 }
 
 export async function logout(): Promise<void> {
-  await authRequest<void>("/api/v1/auth/logout", { method: "POST" });
-  clearAccessToken();
+  try {
+    await authRequest<void>("/api/v1/auth/logout", { method: "POST" });
+  } finally {
+    clearAccessToken();
+  }
 }
 
 async function authRequest<T>(path: string, options: RequestInit): Promise<T> {

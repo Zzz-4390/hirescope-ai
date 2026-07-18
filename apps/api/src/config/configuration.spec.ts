@@ -18,12 +18,12 @@ describe('authConfiguration', () => {
     process.env.NODE_ENV = 'production';
     process.env.AUTH_COOKIE_NAME = 'hirescope_refresh';
     process.env.AUTH_COOKIE_SECURE = 'false';
-    process.env.CORS_ALLOWED_ORIGINS = 'http://114.55.102.140:3000';
+    process.env.CORS_ALLOWED_ORIGINS = 'http://114.55.102.140';
 
     expect(authConfiguration()).toMatchObject({
       cookieName: 'hirescope_refresh',
       secureCookies: false,
-      allowedOrigins: ['http://114.55.102.140:3000'],
+      allowedOrigins: ['http://114.55.102.140'],
     });
   });
 
