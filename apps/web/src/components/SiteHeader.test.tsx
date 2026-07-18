@@ -15,6 +15,7 @@ vi.mock("next/navigation", () => ({
 describe("SiteHeader", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     document.documentElement.dataset.theme = "light";
     document.documentElement.style.colorScheme = "light";
     navigation.replace.mockReset();
@@ -119,7 +120,7 @@ describe("SiteHeader", () => {
     expect(localStorage.getItem("hirescope-theme")).toBe("dark");
   });
 
-  it("refreshes auth state and returns home after logout", async () => {
+  it("clears auth state and redirects to login after logout", async () => {
     localStorage.setItem("hirescope.accessToken", "token-123");
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock.mockResolvedValueOnce(
@@ -134,17 +135,20 @@ describe("SiteHeader", () => {
 
     const avatar = await screen.findByRole("button", { name: "candidate_01的用户菜单" });
     fireEvent.mouseEnter(avatar.parentElement as HTMLElement);
+    const confirmMock = vi.spyOn(window, "confirm");
     fireEvent.click(screen.getByRole("menuitem", { name: "退出登录" }));
 
     await waitFor(() => {
       expect(localStorage.getItem("hirescope.accessToken")).toBeNull();
-      expect(navigation.replace).toHaveBeenCalledWith("/");
+      expect(sessionStorage.getItem("hirescope.loginNotice")).toBe("已退出登录");
+      expect(navigation.replace).toHaveBeenCalledWith("/login");
       expect(navigation.refresh).toHaveBeenCalledTimes(1);
       expect(screen.getByRole("link", { name: "登录" })).toBeInTheDocument();
     });
+    expect(confirmMock).not.toHaveBeenCalled();
   });
 
-  it("keeps the signed-in state and allows retry when remote logout fails", async () => {
+  it("clears signed-in state and redirects when remote logout fails", async () => {
     localStorage.setItem("hirescope.accessToken", "token-123");
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock.mockResolvedValueOnce(
@@ -153,6 +157,7 @@ describe("SiteHeader", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: { message: "服务端会话未注销，请重试" } }), {
         status: 503,
@@ -168,11 +173,13 @@ describe("SiteHeader", () => {
     expect(logoutButton).toBeDefined();
     fireEvent.click(logoutButton!);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("服务端会话未注销，请重试");
-    expect(localStorage.getItem("hirescope.accessToken")).toBe("token-123");
-    expect(navigation.replace).not.toHaveBeenCalled();
-    expect(navigation.refresh).not.toHaveBeenCalled();
-    expect(logoutButton).toBeEnabled();
+    await waitFor(() => {
+      expect(localStorage.getItem("hirescope.accessToken")).toBeNull();
+      expect(navigation.replace).toHaveBeenCalledWith("/login");
+      expect(navigation.refresh).toHaveBeenCalledTimes(1);
+    });
+    expect(sessionStorage.getItem("hirescope.loginNotice")).toBeNull();
+    expect(consoleError).toHaveBeenCalledWith("退出登录接口失败", expect.any(Error));
   });
 
   it("only marks login active on the login route", () => {

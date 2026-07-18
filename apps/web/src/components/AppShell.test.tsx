@@ -45,6 +45,7 @@ const project = {
 describe("AppShell", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.sessionStorage.clear();
     document.documentElement.dataset.theme = "light";
     navigation.pathname = "/app/projects";
     navigation.push.mockReset();
@@ -260,9 +261,10 @@ describe("AppShell", () => {
 
     await waitFor(() => {
       expect(auth.logout).toHaveBeenCalledTimes(1);
-      expect(navigation.replace).toHaveBeenCalledWith("/");
+      expect(navigation.replace).toHaveBeenCalledWith("/login");
       expect(navigation.refresh).toHaveBeenCalledTimes(1);
     });
+    expect(sessionStorage.getItem("hirescope.loginNotice")).toBe("已退出登录");
   });
 
   it("collapses and closes the primary navigation on mobile", async () => {

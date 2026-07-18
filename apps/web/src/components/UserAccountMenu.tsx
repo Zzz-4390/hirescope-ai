@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { type CurrentUser, logout } from "../lib/auth";
+import { LOGOUT_SUCCESS_MESSAGE, saveLoginNotice } from "../lib/auth-session";
 import { setTheme, type AppTheme } from "../lib/theme";
 import { NavigationLink } from "./NavigationTransition";
 import styles from "./UserAccountMenu.module.css";
@@ -26,6 +27,7 @@ export function UserAccountMenu({ user, avatarUrl = null, onLogoutError }: UserA
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const accountMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logoutInFlightRef = useRef(false);
   const accountName = user.username || user.email || "用户";
 
   useEffect(() => {
@@ -88,16 +90,21 @@ export function UserAccountMenu({ user, avatarUrl = null, onLogoutError }: UserA
   }
 
   async function handleLogout() {
+    if (logoutInFlightRef.current) return;
+    logoutInFlightRef.current = true;
     setIsLoggingOut(true);
     setLogoutError("");
     try {
       await logout();
-      router.replace("/");
-      router.refresh();
+      saveLoginNotice(LOGOUT_SUCCESS_MESSAGE);
     } catch (cause) {
-      setLogoutError(cause instanceof Error ? cause.message : "退出登录失败，请稍后重试");
-      setIsLoggingOut(false);
-      onLogoutError?.(cause instanceof Error ? cause.message : "退出登录失败，请稍后重试");
+      const message = cause instanceof Error ? cause.message : "退出登录失败，请稍后重试";
+      console.error("退出登录接口失败", cause);
+      setLogoutError(message);
+      onLogoutError?.(message);
+    } finally {
+      router.replace("/login");
+      router.refresh();
     }
   }
 
