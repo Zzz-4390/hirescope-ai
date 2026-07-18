@@ -371,6 +371,12 @@ html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-
   .desktop-scale-layout :is(.site-header,.app-primary-header,.app-context-toolbar){right:auto;width:var(--desktop-layout-viewport-width)}
   .desktop-scale-layout>:is(.capabilities-page,.process-page,.role-entry-page),
   .desktop-scale-layout>.home-page>section:first-of-type{padding-top:0}
+  .desktop-scale-layout>.home-page .hero-section>.reveal{align-items:flex-start}
+  .desktop-scale-layout>.home-page .hero-grid{align-items:start;padding-top:96px}
+  .desktop-scale-layout>.home-page .hero-copy{padding-top:40px}
+  .desktop-scale-layout>.capabilities-page .cap-hero-grid{padding-top:85px}
+  .desktop-scale-layout>.process-page .process-hero-grid{padding-top:85px}
+  .desktop-scale-layout>.role-entry-page .role-hero-grid{align-items:start;padding-top:94px}
   .desktop-scale-layout .home-page,.desktop-scale-layout .home-page>section{height:var(--desktop-layout-small-height)}
   .desktop-scale-layout .login-page{height:var(--desktop-layout-dynamic-height)}
   .desktop-scale-layout .app-loading{min-height:var(--desktop-layout-viewport-height)}
