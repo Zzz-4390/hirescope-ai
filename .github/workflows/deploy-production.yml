@@ -25,6 +25,7 @@ jobs:
     environment: production
     env:
       DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      PROD_WEB_ORIGIN: ${{ vars.PROD_WEB_ORIGIN || format('http://{0}:3000', secrets.PROD_HOST) }}
 
     steps:
       - name: Configure SSH
@@ -69,12 +70,21 @@ jobs:
             exit 1
           fi
 
+          web_origin_base64="$(printf '%s' "$PROD_WEB_ORIGIN" | base64 -w 0)"
           ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production \
-            "bash -se -- '$DEPLOY_SHA'" <<'REMOTE_SCRIPT'
+            "bash -se -- '$DEPLOY_SHA' '$web_origin_base64'" <<'REMOTE_SCRIPT'
           set -Eeuo pipefail
 
           target_sha="$1"
+          public_web_origin="$(printf '%s' "$2" | base64 -d)"
           cd /opt/hirescope
+
+          if [[ ! "$public_web_origin" =~ ^https?://[^/]+$ ]]; then
+            echo "Invalid production Web origin."
+            exit 1
+          fi
+
+          export CORS_ALLOWED_ORIGINS="$public_web_origin"
 
           compose=(docker compose --env-file .env.production -f docker-compose.prod.yml)
 
@@ -165,6 +175,14 @@ jobs:
           wait_for_services
           curl -fsS --retry 12 --retry-delay 5 --retry-connrefused --max-time 10 \
             http://127.0.0.1:3000/ > /dev/null
+
+          logout_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+            -X POST -H "Origin: $public_web_origin" \
+            http://127.0.0.1:3000/api/v1/auth/logout)"
+          if [[ "$logout_status" != "204" ]]; then
+            echo "Production auth origin smoke failed with HTTP $logout_status."
+            exit 1
+          fi
 
           trap - EXIT
           echo "Production deployment completed for ${target_sha}."

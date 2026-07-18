@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiRequest } from "./api";
+import { ApiError, apiRequest } from "./api";
 import { saveAccessToken } from "./auth";
+import {
+  AUTH_SESSION_EXPIRED_EVENT,
+  AUTH_SESSION_EXPIRED_MESSAGE,
+} from "./auth-session";
 
 describe("apiRequest", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -99,6 +104,62 @@ describe("apiRequest", () => {
     ]);
 
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/v1/auth/refresh")).toHaveLength(1);
+  });
+
+  it("expires the local session and redirects through the auth boundary when refresh fails", async () => {
+    saveAccessToken("expired-token");
+    const expiredListener = vi.fn();
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, expiredListener);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "access token expired" } }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "请求来源不受信任" } }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const error = await apiRequest("/auth/me").catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      message: AUTH_SESSION_EXPIRED_MESSAGE,
+      status: 401,
+      code: "AUTH_SESSION_EXPIRED",
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/auth/refresh",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(localStorage.getItem("hirescope.accessToken")).toBeNull();
+    expect(sessionStorage.getItem("hirescope.loginNotice")).toBe(AUTH_SESSION_EXPIRED_MESSAGE);
+    expect(expiredListener).toHaveBeenCalledTimes(1);
+    window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expiredListener);
+  });
+
+  it("expires the session when the retried request still returns 401", async () => {
+    saveAccessToken("expired-token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("{}", { status: 401 }),
+    ).mockResolvedValueOnce(
+      new Response(JSON.stringify({ accessToken: "fresh-token" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ).mockResolvedValueOnce(
+      new Response("{}", { status: 401 }),
+    );
+
+    await expect(apiRequest("/auth/me")).rejects.toMatchObject({
+      message: AUTH_SESSION_EXPIRED_MESSAGE,
+      status: 401,
+      code: "AUTH_SESSION_EXPIRED",
+    });
+    expect(localStorage.getItem("hirescope.accessToken")).toBeNull();
   });
 
   it("does not set a JSON content type for FormData uploads", async () => {

@@ -1,4 +1,9 @@
 import { clearAccessToken, getAccessToken, saveAccessToken } from "./auth-storage";
+import {
+  AUTH_SESSION_EXPIRED_EVENT,
+  AUTH_SESSION_EXPIRED_MESSAGE,
+  saveLoginNotice,
+} from "./auth-session";
 
 const API_PREFIX = "/api/v1";
 
@@ -37,13 +42,12 @@ async function requestWithAuth<T>(path: string, options: RequestInit, retried: b
   const response = await sendRequest(path, options);
 
   if (response.status === 401 && !retried && !path.startsWith("/auth/refresh")) {
-    try {
-      await refreshAccessToken();
-    } catch (error) {
-      clearAccessToken();
-      throw error;
-    }
+    await refreshAccessToken();
     return requestWithAuth<T>(path, options, true);
+  }
+
+  if (response.status === 401 && retried) {
+    throw expireAuthSession();
   }
 
   return parseResponse<T>(response);
@@ -81,15 +85,26 @@ async function refreshAccessToken(): Promise<string> {
     });
     const payload = await parseResponse<RefreshResponse>(response);
     if (!payload.accessToken) {
-      throw new ApiError("登录状态已失效，请重新登录", 401, "AUTH_REFRESH_MISSING_TOKEN");
+      throw new ApiError(AUTH_SESSION_EXPIRED_MESSAGE, 401, "AUTH_REFRESH_MISSING_TOKEN");
     }
     saveAccessToken(payload.accessToken);
     return payload.accessToken;
-  })().finally(() => {
-    refreshPromise = null;
-  });
+  })()
+    .catch(() => {
+      throw expireAuthSession();
+    })
+    .finally(() => {
+      refreshPromise = null;
+    });
 
   return refreshPromise;
+}
+
+function expireAuthSession(): ApiError {
+  clearAccessToken();
+  saveLoginNotice(AUTH_SESSION_EXPIRED_MESSAGE);
+  window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT));
+  return new ApiError(AUTH_SESSION_EXPIRED_MESSAGE, 401, "AUTH_SESSION_EXPIRED");
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
