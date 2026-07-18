@@ -200,7 +200,10 @@ describe('Auth API', () => {
   });
 
   it('accepts both configured custom-port loopback origins and rejects untrusted or missing origins', async () => {
-    expect((await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', origin)).status).toBe(204);
+    expect((await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Origin', origin)
+      .set('Referer', `${origin}/app`)).status).toBe(204);
     expect((await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', loopbackOrigin)).status).toBe(204);
     expect((await request(app.getHttpServer()).post('/api/v1/auth/logout').set('Origin', 'https://localhost:4301')).status).toBe(403);
     expect((await request(app.getHttpServer()).post('/api/v1/auth/logout')).status).toBe(403);
