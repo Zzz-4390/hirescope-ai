@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { DesktopScaleLayout } from "../components/DesktopScaleLayout";
+import { AuthSessionBoundary } from "../components/AuthSessionBoundary";
 import "./globals.css";
 
 const themeInitializationScript = `(() => {
@@ -24,7 +25,11 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitializationScript }} />
       </head>
-      <body><DesktopScaleLayout>{children}</DesktopScaleLayout></body>
+      
+      <body>
+        <AuthSessionBoundary />
+        <DesktopScaleLayout>{children}</DesktopScaleLayout>
+      </body>
     </html>
   );
 }
