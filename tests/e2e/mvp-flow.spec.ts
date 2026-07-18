@@ -240,7 +240,7 @@ async function setTheme(page: Page, theme: "light" | "dark") {
 
 async function installScreenshotStyles(page: Page) {
   await page.addStyleTag({
-    content: ".report-overview-panel{height:192px!important}.interview-report-error-panel{height:220px!important}",
+    content: ".desktop-scale-layout{zoom:1!important}.report-overview-panel{height:192px!important}.interview-report-error-panel{height:220px!important}",
   });
 }
 

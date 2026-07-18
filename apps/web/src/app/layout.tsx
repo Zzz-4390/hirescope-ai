@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { DesktopScaleLayout } from "../components/DesktopScaleLayout";
 import { NavigationTransitionProvider } from "../components/NavigationTransition";
 import { RootChrome } from "../components/RootChrome";
 import { themeInitializationScript } from "../lib/theme";
@@ -21,9 +22,11 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       </head>
       <body>
         <AuthSessionBoundary />
-        <NavigationTransitionProvider>
-          <RootChrome>{children}</RootChrome>
-        </NavigationTransitionProvider>
+        <DesktopScaleLayout>
+          <NavigationTransitionProvider>
+            <RootChrome>{children}</RootChrome>
+          </NavigationTransitionProvider>
+        </DesktopScaleLayout>
       </body>
     </html>
   );

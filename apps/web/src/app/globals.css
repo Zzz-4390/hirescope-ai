@@ -371,4 +371,12 @@ html[data-theme="dark"] .app-authenticated-shell .interview-report-page .questio
 html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-performance.low,html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-performance.low strong{color:var(--app-theme-danger)}
 html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-performance.medium,html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-performance.medium strong{color:var(--app-theme-warning)}
 html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-performance.high,html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-performance.high strong{color:var(--app-theme-success)}
+/* Match every desktop route to the browser's 90% zoom appearance at 100%. */
+@media(min-width:1024px){
+  .desktop-scale-layout{--desktop-layout-viewport-width:calc(100vw / .9);--desktop-layout-viewport-height:calc(100vh / .9);--desktop-layout-dynamic-height:calc(100dvh / .9);--desktop-layout-small-height:calc(100svh / .9);width:100%;min-height:var(--desktop-layout-viewport-height);zoom:.9;overflow-x:clip}
+  .desktop-scale-layout :is(.site-header,.app-primary-header,.app-context-toolbar){right:auto;width:var(--desktop-layout-viewport-width)}
+  .desktop-scale-layout .home-page,.desktop-scale-layout .home-page>section{height:var(--desktop-layout-small-height)}
+  .desktop-scale-layout .login-page{height:var(--desktop-layout-dynamic-height)}
+  .desktop-scale-layout .app-loading{min-height:var(--desktop-layout-viewport-height)}
+}
 html[data-theme="dark"] .site-header{box-shadow:0 1px 0 rgba(255,255,255,.03)}html[data-theme="dark"] .logo{color:var(--app-theme-text)}html[data-theme="dark"] .logo-copy small{color:var(--app-theme-muted)}html[data-theme="dark"] .mobile-nav-toggle,html[data-theme="dark"] .mobile-nav-panel{border-color:var(--app-theme-border);background:var(--app-theme-surface);color:var(--app-theme-text)}html[data-theme="dark"] .mobile-nav-panel a{border-color:var(--app-theme-border);color:var(--app-theme-text)}html[data-theme="dark"] .mobile-nav-panel a.active{border-color:var(--app-theme-accent);background:var(--app-theme-selected);color:var(--app-theme-accent)}
