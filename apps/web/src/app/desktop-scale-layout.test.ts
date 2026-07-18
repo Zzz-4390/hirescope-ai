@@ -32,6 +32,7 @@ describe("shared desktop scale layout", () => {
     expect(compactCss).toContain("@media(min-width:1024px)");
     expect(compactCss).toContain(".desktop-scale-layout{--desktop-layout-viewport-width:calc(100vw/.9);--desktop-layout-viewport-height:calc(100vh/.9);--desktop-layout-dynamic-height:calc(100dvh/.9);--desktop-layout-small-height:calc(100svh/.9);width:100%;min-height:var(--desktop-layout-viewport-height);zoom:.9;overflow-x:clip}");
     expect(css).toMatch(/\.desktop-scale-layout\s+:is\(\.site-header,\.app-primary-header,\.app-context-toolbar\)\{right:auto;width:var\(--desktop-layout-viewport-width\)\}/);
+    expect(compactCss).toContain(".desktop-scale-layout>:is(.capabilities-page,.process-page,.role-entry-page),.desktop-scale-layout>.home-page>section:first-of-type{padding-top:0}");
     expect(css).toMatch(/\.desktop-scale-layout\s+\.home-page,\.desktop-scale-layout\s+\.home-page>section\{height:var\(--desktop-layout-small-height\)\}/);
     expect(css).toMatch(/\.desktop-scale-layout\s+\.login-page\{height:var\(--desktop-layout-dynamic-height\)\}/);
     expect(css).toMatch(/\.desktop-scale-layout\s+\.app-loading\{min-height:var\(--desktop-layout-viewport-height\)\}/);
