@@ -15,6 +15,8 @@ vi.mock("next/navigation", () => ({
 describe("SiteHeader", () => {
   beforeEach(() => {
     localStorage.clear();
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.colorScheme = "light";
     navigation.replace.mockReset();
     navigation.refresh.mockReset();
     vi.restoreAllMocks();
@@ -93,6 +95,28 @@ describe("SiteHeader", () => {
     expect(screen.getByRole("menuitem", { name: "个人中心" })).toHaveAttribute("href", "/app/profile");
     expect(screen.getByRole("menuitem", { name: "主题颜色" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "退出登录" })).toBeInTheDocument();
+  });
+
+  it("applies the shared theme to the document root from the home header", async () => {
+    localStorage.setItem("hirescope.accessToken", "token-123");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: "user-1", username: "candidate_01", email: "candidate@example.com" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    render(<SiteHeader />);
+
+    const avatar = await screen.findByRole("button", { name: "candidate_01的用户菜单" });
+    fireEvent.mouseEnter(avatar.parentElement as HTMLElement);
+    const themeTrigger = screen.getByRole("menuitem", { name: "主题颜色" });
+    fireEvent.mouseEnter(themeTrigger.parentElement as HTMLElement);
+    fireEvent.click(screen.getByRole("menuitem", { name: "深色" }));
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    expect(localStorage.getItem("hirescope-theme")).toBe("dark");
   });
 
   it("refreshes auth state and returns home after logout", async () => {
