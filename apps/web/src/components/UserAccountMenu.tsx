@@ -1,12 +1,12 @@
 "use client";
 
 import { Check, ChevronRight, LogOut, Palette, RefreshCw, UserRound } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { type CurrentUser, logout } from "../lib/auth";
 import { setTheme, type AppTheme } from "../lib/theme";
+import { NavigationLink } from "./NavigationTransition";
 import styles from "./UserAccountMenu.module.css";
 
 const ACCOUNT_MENU_CLOSE_DELAY_MS = 200;
@@ -128,14 +128,14 @@ export function UserAccountMenu({ user, avatarUrl = null, onLogoutError }: UserA
         aria-label="用户菜单"
         aria-hidden={!isAccountMenuOpen}
       >
-        <Link
+        <NavigationLink
           href="/app/profile"
           role="menuitem"
           onMouseEnter={() => setIsThemeMenuOpen(false)}
           onClick={closeAccountMenu}
         >
           <UserRound aria-hidden="true" /><span>个人中心</span><ChevronRight aria-hidden="true" />
-        </Link>
+        </NavigationLink>
         <div
           className={styles.themeMenuArea}
           onMouseEnter={() => setIsThemeMenuOpen(true)}

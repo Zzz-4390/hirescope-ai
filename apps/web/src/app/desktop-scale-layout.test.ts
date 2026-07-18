@@ -12,7 +12,8 @@ describe("shared desktop scale layout", () => {
     const desktopLayout = readSource("src/components/DesktopScaleLayout.tsx");
 
     expect(rootLayout).toContain('import { DesktopScaleLayout } from "../components/DesktopScaleLayout"');
-    expect(rootLayout).toContain("<DesktopScaleLayout>{children}</DesktopScaleLayout>");
+    expect(rootLayout.match(/<DesktopScaleLayout>/g)).toHaveLength(1);
+    expect(rootLayout).toMatch(/<DesktopScaleLayout>[\s\S]*\{children\}[\s\S]*<\/DesktopScaleLayout>/);
     expect(desktopLayout).toContain('className="desktop-scale-layout"');
 
     [
