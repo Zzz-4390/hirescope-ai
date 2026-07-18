@@ -39,14 +39,13 @@ export function validateEnvironment(env: Environment): Record<string, unknown> {
     try {
       const parsed = new URL(origin);
       if (parsed.origin !== origin) return true;
-      if (parsed.protocol === 'https:') return false;
-      return parsed.protocol !== 'http:' || parsed.port.length === 0;
+      return parsed.protocol !== 'https:' && parsed.protocol !== 'http:';
     } catch {
       return true;
     }
   });
   if (invalidOrigin) {
-    throw new Error('CORS_ALLOWED_ORIGINS must be an exact HTTP(S) origin allowlist; HTTP origins require an explicit port');
+    throw new Error('CORS_ALLOWED_ORIGINS must be an exact HTTP(S) origin allowlist');
   }
   if (secureCookies && origins.some((origin) => origin.startsWith('http://'))) {
     throw new Error('AUTH_COOKIE_SECURE must be false when CORS_ALLOWED_ORIGINS contains an HTTP origin');

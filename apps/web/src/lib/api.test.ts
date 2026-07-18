@@ -141,6 +141,33 @@ describe("apiRequest", () => {
     window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expiredListener);
   });
 
+  it("handles concurrent refresh failures and later 401 responses only once", async () => {
+    saveAccessToken("expired-token");
+    const expiredListener = vi.fn();
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, expiredListener);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      if (input === "/api/v1/auth/refresh") {
+        return Promise.resolve(new Response("{}", { status: 401 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 401 }));
+    });
+
+    const results = await Promise.allSettled([
+      apiRequest("/projects"),
+      apiRequest("/interviews"),
+    ]);
+    await expect(apiRequest("/auth/me")).rejects.toMatchObject({
+      message: AUTH_SESSION_EXPIRED_MESSAGE,
+      code: "AUTH_SESSION_EXPIRED",
+    });
+
+    expect(results.every((result) => result.status === "rejected")).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/v1/auth/refresh")).toHaveLength(1);
+    expect(expiredListener).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("hirescope.loginNotice")).toBe(AUTH_SESSION_EXPIRED_MESSAGE);
+    window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, expiredListener);
+  });
+
   it("expires the session when the retried request still returns 401", async () => {
     saveAccessToken("expired-token");
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(

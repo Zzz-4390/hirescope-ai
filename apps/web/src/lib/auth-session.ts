@@ -1,5 +1,6 @@
 export const AUTH_SESSION_EXPIRED_EVENT = "hirescope:auth-session-expired";
-export const AUTH_SESSION_EXPIRED_MESSAGE = "登录已过期，请重新登录";
+export const AUTH_SESSION_EXPIRED_MESSAGE = "身份验证已过期，请重新登录";
+export const LOGOUT_SUCCESS_MESSAGE = "已退出登录";
 
 const LOGIN_NOTICE_STORAGE_KEY = "hirescope.loginNotice";
 

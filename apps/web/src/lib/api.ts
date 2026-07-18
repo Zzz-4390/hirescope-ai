@@ -33,13 +33,19 @@ export class ApiError extends Error {
 }
 
 let refreshPromise: Promise<string> | null = null;
+let sessionExpirationError: ApiError | null = null;
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (sessionExpirationError && getAccessToken()) sessionExpirationError = null;
   return requestWithAuth<T>(path, options, false);
 }
 
 async function requestWithAuth<T>(path: string, options: RequestInit, retried: boolean): Promise<T> {
   const response = await sendRequest(path, options);
+
+  if (response.status === 401 && sessionExpirationError) {
+    throw sessionExpirationError;
+  }
 
   if (response.status === 401 && !retried && !path.startsWith("/auth/refresh")) {
     await refreshAccessToken();
@@ -101,10 +107,13 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 function expireAuthSession(): ApiError {
+  if (sessionExpirationError) return sessionExpirationError;
+
+  sessionExpirationError = new ApiError(AUTH_SESSION_EXPIRED_MESSAGE, 401, "AUTH_SESSION_EXPIRED");
   clearAccessToken();
   saveLoginNotice(AUTH_SESSION_EXPIRED_MESSAGE);
   window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT));
-  return new ApiError(AUTH_SESSION_EXPIRED_MESSAGE, 401, "AUTH_SESSION_EXPIRED");
+  return sessionExpirationError;
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

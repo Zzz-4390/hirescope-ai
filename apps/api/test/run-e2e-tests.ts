@@ -26,7 +26,7 @@ const environment = {
   DATABASE_URL: databaseUrl,
   REDIS_URL: redisUrl,
   STORAGE_ROOT: testStorageRoot,
-  CORS_ALLOWED_ORIGINS: 'http://114.55.102.140:3000,http://127.0.0.1:4300',
+  CORS_ALLOWED_ORIGINS: 'http://114.55.102.140,http://127.0.0.1:4300',
   AUTH_COOKIE_SECURE: 'false',
   AUTH_COOKIE_NAME: 'hirescope_refresh',
   OSS_ACCESS_KEY_ID: 'test-access-key-id',

@@ -5,7 +5,7 @@ import type { AuthConfig } from '../../auth/auth.constants';
 import { TrustedOriginGuard } from './trusted-origin.guard';
 
 describe('TrustedOriginGuard', () => {
-  const allowedOrigins = ['http://localhost:4200', 'http://127.0.0.1:4200'];
+  const allowedOrigins = ['http://114.55.102.140', 'http://localhost:4200', 'http://127.0.0.1:4200'];
   const guard = new TrustedOriginGuard({ allowedOrigins } as AuthConfig);
 
   it.each(allowedOrigins)('allows an exactly configured origin: %s', (origin) => {

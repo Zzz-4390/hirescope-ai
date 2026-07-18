@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { isAllowedOrigin } from './common/security/trusted-origin';
 import { authConfiguration } from './config/configuration';
 
 export function configureApplication(app: INestApplication): void {
@@ -11,7 +12,7 @@ export function configureApplication(app: INestApplication): void {
   app.enableCors({
     credentials: true,
     origin(origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) {
-      if (!origin || config.allowedOrigins.includes(origin)) return callback(null, true);
+      if (!origin || isAllowedOrigin(origin, config.allowedOrigins)) return callback(null, true);
       return callback(null, false);
     },
   });

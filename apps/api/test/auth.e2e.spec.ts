@@ -31,7 +31,7 @@ describe('Auth API', () => {
   const email = 'auth-e2e@example.com';
   const username = 'auth_e2e_user';
   const password = 'StrongPassword123!';
-  const origin = 'http://114.55.102.140:3000';
+  const origin = 'http://114.55.102.140';
   const loopbackOrigin = 'http://127.0.0.1:4300';
   const objectStorage = new InMemoryObjectStorage();
 
