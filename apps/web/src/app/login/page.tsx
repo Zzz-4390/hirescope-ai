@@ -1,10 +1,8 @@
 import { LoginForm } from "../../components/LoginForm";
-import { SiteHeader } from "../../components/SiteHeader";
 
 export default function LoginPage() {
   return (
     <div className="login-page">
-      <SiteHeader current="login" />
       <main className="login-main">
         <h1>现在登录，让面试准备更高效。</h1>
         <LoginForm />

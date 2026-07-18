@@ -10,6 +10,7 @@ import { listProjects, type Project } from "../lib/projects";
 import { AppAvatarContext, AppProjectContext, AppUserContext } from "./AppUserContext";
 import { DashboardToolbar } from "./dashboard/DashboardToolbar";
 import { Logo } from "./Logo";
+import { NavigationLink, RouteTransitionBoundary } from "./NavigationTransition";
 import { UserAccountMenu } from "./UserAccountMenu";
 import styles from "./AppShell.module.css";
 
@@ -127,15 +128,15 @@ export function AppShell({ children }: AppShellProps) {
         <div className={`${styles.shell} app-authenticated-shell`}>
           <header className={styles.primaryHeader}>
             <div className={styles.primaryInner}>
-              <Link className={styles.brand} href="/app" aria-label="码途 AI 工作台">
+              <NavigationLink className={styles.brand} href="/app" aria-label="码途 AI 工作台">
                 <Logo />
-              </Link>
+              </NavigationLink>
               <nav className={`${styles.nav} ${isMobileNavOpen ? styles.navOpen : ""}`} aria-label="工作台主导航">
                 {appNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = item.href === activeNavHref;
                   return (
-                    <Link
+                    <NavigationLink
                       key={item.href}
                       className={active ? styles.active : ""}
                       href={item.href}
@@ -144,7 +145,7 @@ export function AppShell({ children }: AppShellProps) {
                     >
                       <Icon aria-hidden="true" />
                       <span>{item.label}</span>
-                    </Link>
+                    </NavigationLink>
                   );
                 })}
               </nav>
@@ -174,7 +175,7 @@ export function AppShell({ children }: AppShellProps) {
           ) : null}
           <div className={`${styles.frame} ${isProfilePage ? styles.profileFrame : ""}`}>
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
-            <main className={styles.content}>{children}</main>
+            <main className={styles.content}><RouteTransitionBoundary>{children}</RouteTransitionBoundary></main>
           </div>
         </div>
       </AppProjectContext.Provider>

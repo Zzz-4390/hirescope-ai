@@ -1,0 +1,39 @@
+.boundary {
+  width: 100%;
+  min-height: inherit;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.idle {
+  transition:
+    opacity 360ms cubic-bezier(.22, 1, .36, 1),
+    transform 360ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.leaving {
+  opacity: .42;
+  transform: translateY(-4px);
+  transition:
+    opacity 340ms cubic-bezier(.22, 1, .36, 1),
+    transform 340ms cubic-bezier(.22, 1, .36, 1);
+  will-change: opacity, transform;
+}
+
+.entering {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: none;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boundary,
+  .idle,
+  .leaving,
+  .entering {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

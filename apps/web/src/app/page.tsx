@@ -7,7 +7,6 @@ import Link from "next/link";
 
 import { Reveal } from "../components/Reveal";
 import { HomeRevealManager } from "../components/HomeRevealManager";
-import { SiteHeader } from "../components/SiteHeader";
 
 const capabilities = [
   { icon: CloudUpload, title: "上传项目", text: "支持 Git 仓库或压缩包" },
@@ -57,7 +56,7 @@ function ScorePanel() {
 
 export default function HomePage() {
   return (
-    <><SiteHeader /><main className="home-page">
+    <main className="home-page">
       <HomeRevealManager />
       <section className="hero-section snap-section"><Reveal><div className="hero-grid"><div className="hero-copy"><h1>让项目能力被看见</h1><p>码途 AI（HireScope AI）通过 AI 项目审查、模拟面试与能力报告，帮助求职者更好展示自己，帮助面试官更科学评估候选人。</p><div className="hero-buttons"><Link className="primary-button" href="/app">立即体验 <ArrowRight /></Link><Link className="secondary-button" href="/reports">查看报告示例 <ArrowRight /></Link></div></div><ProductPreview /></div></Reveal><div className="capability-strip">{capabilities.map(({icon:Icon,title,text}) => <div key={title}><Icon/><span><strong>{title}</strong><small>{text}</small></span></div>)}</div></section>
 
@@ -66,6 +65,6 @@ export default function HomePage() {
       <section className="features-section snap-section"><div className="screen-content"><Reveal><header className="feature-hero"><h2>核心能力，逐步展开</h2><p>深入项目审查与模拟面试，让评估结果更准确、更有依据。</p></header><div className="feature-row"><div className="feature-copy"><div className="feature-heading"><i><Code2/></i><div><h2>AI 项目审查</h2><p>自动解析项目代码与文档，从代码质量、架构设计和工程实践等维度形成结构化结论。</p></div></div><div className="feature-summary"><span>多维评估体系</span><span>智能图表分析</span><span>AI 洞察总结</span></div></div><ScorePanel /></div><div className="interview-row"><div className="interview-mock"><div><Bot/> 模拟面试进行中 <b>08:45</b></div><p>请介绍一下你在这个项目中承担的核心职责和技术选型思路。</p><div className="waveform">||||||||||||||||||||||||||||||||</div></div><div className="feature-copy"><div className="feature-heading"><i><MessageSquare/></i><div><h2>AI 模拟面试</h2><p>基于项目内容动态生成问题链，通过智能追问评估技术深度与表达能力。</p></div></div><div className="feature-summary"><span>个性化问题链</span><span>实时智能追问</span></div></div></div></Reveal></div></section>
 
       <section className="report-section snap-section"><Reveal><div className="report-heading"><span>报告示例</span><h2>能力报告，一目了然</h2><p>从多维度科学评估候选人能力，结合 AI 洞察与建议，帮助你更全面地了解人才。</p></div><div className="report-card"><div className="candidate-score"><div className="score-ring"><strong>86</strong><small>/100</small></div><p>超过 85% 的同岗位候选人</p><hr/><div className="candidate"><CircleUserRound/><span><strong>张一鸣</strong><small>高级前端工程师</small></span></div></div><div className="report-radar"><h3>能力维度</h3><div className="radar-large"><span>专业技能　88</span><b>代码质量　82</b><em>问题解决　85</em><i>工程实践　84</i></div></div><div className="insights"><h3><Star/> 优势亮点</h3><p><Check/> 算法与数据结构扎实，复杂问题分析能力强</p><p><Check/> 代码规范性好，注重可维护性与可扩展性</p><hr/><h3 className="improvement-title"><Target/> 待提升项</h3><p>大型项目架构设计方面经验较少</p><p>跨团队沟通时表达不够结构化</p></div><div className="suggestions"><h3><Sparkles/> AI 建议</h3>{[[CircleUserRound,"岗位匹配度","与目标岗位匹配度高，具备胜任核心能力。"],[TrendingUp,"发展潜力","具备较强学习能力和技术深度。"],[FileSearch,"面试建议","重点考察大型项目架构经验。"]].map(([Icon,title,text])=><article key={String(title)}><Icon/><div><strong>{String(title)}</strong><p>{String(text)}</p></div></article>)}</div></div><div className="report-cta"><FileSearch/><span><strong>想查看更多真实报告示例？</strong><small>覆盖多种岗位与场景，帮助你更直观地了解评估维度与输出内容。</small></span><Link className="report-cta-link" href="/reports">查看报告示例 <ArrowRight/></Link></div></Reveal><footer className="home-footer"><div className="footer-brand">码途 AI <small>HireScope AI</small></div><div>关于我们　　隐私政策　　服务条款　　联系我们</div><span>© 2026 HireScope AI. 保留所有权利。</span></footer></section>
-    </main></>
+    </main>
   );
 }

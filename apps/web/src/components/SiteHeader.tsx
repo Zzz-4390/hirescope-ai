@@ -1,11 +1,11 @@
 "use client";
 
 import { Menu, X } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { type CurrentUser, getAccessToken, getCurrentUser } from "../lib/auth";
 import { Logo } from "./Logo";
+import { NavigationLink } from "./NavigationTransition";
 import { UserAccountMenu } from "./UserAccountMenu";
 
 const navItems = [
@@ -56,25 +56,25 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
   return (
     <header className="site-header">
       <div className="header-inner">
-        <Link className="brand" href="/" aria-label="码途 AI 首页">
+        <NavigationLink className="brand" href="/" aria-label="码途 AI 首页">
           <Logo />
-        </Link>
+        </NavigationLink>
         <nav className="desktop-nav" aria-label="主导航">
           {navItems.map((item) => (
-            <Link key={item.label} className={current === item.key ? "active" : ""} href={item.href}>
+            <NavigationLink key={item.label} className={current === item.key ? "active" : ""} href={item.href}>
               {item.label}
-            </Link>
+            </NavigationLink>
           ))}
         </nav>
         <div className="header-actions">
           {user ? (
             <UserAccountMenu user={user} avatarUrl={user.avatarUrl} />
           ) : (
-            <Link className={current === "login" ? "active" : ""} href="/login">登录</Link>
+            <NavigationLink className={current === "login" ? "active" : ""} href="/login">登录</NavigationLink>
           )}
-          <Link className="header-cta" href={user ? "/app" : "/login"}>
+          <NavigationLink className="header-cta" href={user ? "/app" : "/login"}>
             {user ? "进入工作台" : "立即体验"}
-          </Link>
+          </NavigationLink>
           <button
             className="mobile-nav-toggle"
             type="button"
@@ -89,14 +89,14 @@ export function SiteHeader({ current = "home" }: SiteHeaderProps) {
       {isMobileNavOpen ? (
         <nav className="mobile-nav-panel" aria-label="移动端导航">
           {navItems.map((item) => (
-            <Link
+            <NavigationLink
               key={item.label}
               className={current === item.key ? "active" : ""}
               href={item.href}
               onClick={() => setIsMobileNavOpen(false)}
             >
               {item.label}
-            </Link>
+            </NavigationLink>
           ))}
         </nav>
       ) : null}
