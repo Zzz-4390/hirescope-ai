@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { login, saveAccessToken } from "../lib/auth";
+import { takeLoginNotice } from "../lib/auth-session";
 
 export function LoginForm() {
   const router = useRouter();
@@ -105,13 +106,6 @@ export function LoginForm() {
       </p>
     </form>
   );
-}
-
-function takeLoginNotice(): string {
-  if (typeof window === "undefined") return "";
-  const message = sessionStorage.getItem("hirescope.loginNotice") ?? "";
-  sessionStorage.removeItem("hirescope.loginNotice");
-  return message;
 }
 
 function getRememberedIdentifier(): string {

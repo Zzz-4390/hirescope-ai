@@ -36,6 +36,15 @@ describe("global SiteHeader visual contract", () => {
     expect(css).toContain("font-size:15px;font-weight:400");
     expect(css).toContain(".header-actions .header-cta{color:var(--blue)!important;font-weight:500}");
     expect(css).toContain(".logo-copy strong{font-size:18px;font-weight:650");
-    expect(css).toContain(".logo-copy small{margin-top:4px;color:#303846;font-size:9px;font-weight:400");
+    expect(css).toContain(".logo-copy small{margin-top:4px;color:var(--app-theme-muted);font-size:9px;font-weight:400");
+  });
+
+  it("defines home and navigation colors through global theme variables", () => {
+    const css = readFileSync(join(appRoot, "src/app/globals.css"), "utf8");
+
+    expect(css).toContain("--home-hero-background");
+    expect(css).toContain(".home-page{height:100svh");
+    expect(css).toContain("background:var(--app-theme-header)");
+    expect(css).toContain("html[data-theme=\"dark\"]{color-scheme:dark");
   });
 });
