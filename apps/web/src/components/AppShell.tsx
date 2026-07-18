@@ -125,7 +125,7 @@ export function AppShell({ children }: AppShellProps) {
       <AppAvatarContext.Provider value={{ avatarUrl, setAvatarUrl: handleAvatarUrl }}>
       <AppProjectContext.Provider value={{ selectedProjectId, selectProject: handleProjectSelect }}>
         <div className={`${styles.shell} app-authenticated-shell`}>
-          <header className={styles.primaryHeader}>
+          <header className={`${styles.primaryHeader} app-primary-header`}>
             <div className={styles.primaryInner}>
               <Link className={styles.brand} href="/app" aria-label="码途 AI 工作台">
                 <Logo />

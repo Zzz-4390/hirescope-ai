@@ -59,7 +59,7 @@ export function DashboardToolbar({ projects, selectedId, onSelect }: { projects:
   };
 
   return (
-    <header className={styles.toolbar} aria-label="项目上下文">
+    <header className={`${styles.toolbar} app-context-toolbar`} aria-label="项目上下文">
       <div className={styles.toolbarInner}>
         <span className={styles.currentProjectLabel}>当前项目</span>
         <div className={projects.length === 0 ? styles.emptyProjectSelect : styles.projectSelect} ref={projectMenuRef}>
