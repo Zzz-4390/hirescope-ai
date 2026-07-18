@@ -81,7 +81,7 @@ pnpm --filter @hirescope/web dev -- --port 4200
 
 ## 生产 Docker 启动
 
-这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。当前示例支持通过 `http://114.55.102.140:3000` 直接访问；上线后仍建议尽快接入 TLS 和持久化备份。
+这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。当前临时部署通过 `http://114.55.102.140` 直接访问；正式生产环境仍建议尽快接入 TLS 和持久化备份。
 
 1. 创建真实生产环境文件并设置仅属主可读权限：
 
@@ -91,7 +91,27 @@ pnpm --filter @hirescope/web dev -- --port 4200
    ```
 
 2. 替换全部示例占位值，包括 `replace_with_*` 和 `replace-with-private-bucket`；保证 `POSTGRES_PASSWORD` 与 `DATABASE_URL`、`REDIS_PASSWORD` 与 `REDIS_URL` 一致。URL 中的特殊字符必须进行 percent-encoding。OSS 应使用私有 Bucket 和仅允许头像对象读写的最小权限凭据。
-3. 直连公网 IP 时使用 `CORS_ALLOWED_ORIGINS=http://114.55.102.140:3000`、`AUTH_COOKIE_SECURE=false`、`AUTH_COOKIE_NAME=hirescope_refresh`、`TRUST_PROXY_HOPS=0` 和 `WEB_BIND_ADDRESS=0.0.0.0`。若改为 HTTPS 反向代理，则把 Origin 改为精确 HTTPS 地址，设置 `AUTH_COOKIE_SECURE=true`、使用 `__Secure-` Cookie 名，并让 `TRUST_PROXY_HOPS` 等于可信代理的实际跳数。
+3. `CORS_ALLOWED_ORIGINS`、`AUTH_COOKIE_SECURE` 和 `AUTH_COOKIE_NAME` 是一组不可拆分的认证配置，必须配套修改。Origin 必须与浏览器地址栏中的实际 Origin 完全一致：协议、主机和端口必须一致，不包含路径，也不带末尾 `/`。
+
+   当前 HTTP 临时部署使用：
+
+   ```dotenv
+   CORS_ALLOWED_ORIGINS=http://114.55.102.140
+   AUTH_COOKIE_SECURE=false
+   AUTH_COOKIE_NAME=hirescope_refresh_token
+   ```
+
+   HTTPS 正式生产部署使用以下推荐配置，并将示例域名替换为实际域名：
+
+   ```dotenv
+   CORS_ALLOWED_ORIGINS=https://实际域名
+   AUTH_COOKIE_SECURE=true
+   AUTH_COOKIE_NAME=__Secure-hirescope_refresh_token
+   ```
+
+   直连公网 IP 时保持 `TRUST_PROXY_HOPS=0` 和 `WEB_BIND_ADDRESS=0.0.0.0`；改为 HTTPS 反向代理后，让 `TRUST_PROXY_HOPS` 等于可信代理的实际跳数。
+
+   自动部署会把 GitHub Production Environment 中的 `PROD_WEB_ORIGIN` 导出为 `CORS_ALLOWED_ORIGINS`，因此该值会在本次 Compose 部署中覆盖服务器 `.env.production` 的同名配置，但不会改写该文件。当前 HTTP 环境必须显式设置 `PROD_WEB_ORIGIN=http://114.55.102.140`。后续启用 HTTPS 时，必须同时把 `PROD_WEB_ORIGIN` 更新为 `https://实际域名`，并在服务器 `.env.production` 中设置 `AUTH_COOKIE_SECURE=true` 和 `AUTH_COOKIE_NAME=__Secure-hirescope_refresh_token`，不能只修改 Origin。
 4. 校验配置并构建镜像：
 
    ```bash
@@ -108,7 +128,7 @@ pnpm --filter @hirescope/web dev -- --port 4200
    docker compose --env-file .env.production -f docker-compose.prod.yml ps
    ```
 
-6. 访问 `http://114.55.102.140:3000`，并检查容器日志：
+6. 访问当前 HTTP 地址 `http://114.55.102.140`，并检查容器日志：
 
    ```bash
    docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=200 api worker web
@@ -142,7 +162,27 @@ pnpm --filter @hirescope/web dev -- --port 4200
 | API / 代理 | `NODE_ENV`、`API_HOST`、`API_PORT`、`API_ORIGIN`、`CORS_ALLOWED_ORIGINS`、`TRUST_PROXY_HOPS` |
 | Auth | `JWT_*`、`AUTH_REFRESH_*`、`AUTH_COOKIE_SECURE`、`AUTH_COOKIE_NAME`、`AUTH_DUMMY_PASSWORD_HASH`、`AUTH_ARGON2_*`、`AUTH_*_WINDOW_SECONDS`、`AUTH_*_MAX_REQUESTS` |
 
-`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` 必须同时设置。Cookie 安全策略由 `AUTH_COOKIE_SECURE` 显式控制，不再由 `NODE_ENV` 推断。HTTP Origin 必须显式包含端口，并搭配 `AUTH_COOKIE_SECURE=false` 和不带 `__Secure-` 前缀的 Cookie 名；CORS 始终使用精确白名单并保留凭据，禁止 `*`。HTTP 会明文传输会话流量，仅适合作为当前部署过渡方案。
+`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` 必须同时设置。Cookie 安全策略由 `AUTH_COOKIE_SECURE` 显式控制，不再由 `NODE_ENV` 推断。
+
+`CORS_ALLOWED_ORIGINS`、`AUTH_COOKIE_SECURE` 和 `AUTH_COOKIE_NAME` 必须作为一组配套修改。Origin 的协议、主机和端口必须与浏览器地址栏中的实际 Origin 完全一致，不包含路径，也不带末尾 `/`。CORS 始终使用精确白名单并保留凭据，禁止 `*`。
+
+HTTP 临时部署：
+
+```dotenv
+CORS_ALLOWED_ORIGINS=http://实际访问地址
+AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_NAME=hirescope_refresh_token
+```
+
+HTTPS 正式生产部署（推荐）：
+
+```dotenv
+CORS_ALLOWED_ORIGINS=https://实际域名
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_NAME=__Secure-hirescope_refresh_token
+```
+
+HTTP 会明文传输会话流量，仅适合作为临时过渡方案。启用 HTTPS 时必须同时更新以上三项配置；通过 GitHub Actions 自动部署时，还必须同步更新 GitHub Production Environment 的 `PROD_WEB_ORIGIN`，因为该变量会在部署期间覆盖 `CORS_ALLOWED_ORIGINS`，但不会改写服务器 `.env.production`。
 
 ## 验证与测试
 
