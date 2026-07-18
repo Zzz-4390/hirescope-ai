@@ -5,13 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { type CurrentUser, logout } from "../lib/auth";
+import { setTheme, type AppTheme } from "../lib/theme";
 import { NavigationLink } from "./NavigationTransition";
 import styles from "./UserAccountMenu.module.css";
 
 const ACCOUNT_MENU_CLOSE_DELAY_MS = 200;
-const THEME_STORAGE_KEY = "hirescope-theme";
-
-type AppTheme = "light" | "dark";
 
 interface UserAccountMenuProps {
   user: CurrentUser;
@@ -86,12 +84,7 @@ export function UserAccountMenu({ user, avatarUrl = null, onLogoutError }: UserA
   }
 
   function handleThemeSelect(theme: AppTheme) {
-    document.documentElement.dataset.theme = theme;
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // The selected theme still applies for this session when storage is unavailable.
-    }
+    setTheme(theme);
   }
 
   async function handleLogout() {
