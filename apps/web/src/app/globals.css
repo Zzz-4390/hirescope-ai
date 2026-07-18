@@ -375,6 +375,8 @@ html[data-theme="dark"] .app-authenticated-shell .interview-report-page .report-
 @media(min-width:1024px){
   .desktop-scale-layout{--desktop-layout-viewport-width:calc(100vw / .9);--desktop-layout-viewport-height:calc(100vh / .9);--desktop-layout-dynamic-height:calc(100dvh / .9);--desktop-layout-small-height:calc(100svh / .9);width:100%;min-height:var(--desktop-layout-viewport-height);zoom:.9;overflow-x:clip}
   .desktop-scale-layout :is(.site-header,.app-primary-header,.app-context-toolbar){right:auto;width:var(--desktop-layout-viewport-width)}
+  .desktop-scale-layout>:is(.capabilities-page,.process-page,.role-entry-page),
+  .desktop-scale-layout>.home-page>section:first-of-type{padding-top:0}
   .desktop-scale-layout .home-page,.desktop-scale-layout .home-page>section{height:var(--desktop-layout-small-height)}
   .desktop-scale-layout .login-page{height:var(--desktop-layout-dynamic-height)}
   .desktop-scale-layout .app-loading{min-height:var(--desktop-layout-viewport-height)}
