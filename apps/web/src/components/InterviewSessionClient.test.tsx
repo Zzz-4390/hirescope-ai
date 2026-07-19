@@ -9,6 +9,7 @@ import { InterviewSessionClient } from "./InterviewSessionClient";
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../lib/interviews", () => ({
+  INTERVIEW_ANSWER_MAX_LENGTH: 5000,
   getInterview: vi.fn(),
   saveInterviewAnswer: vi.fn(),
   startInterview: vi.fn(),

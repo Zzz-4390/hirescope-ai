@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../lib/api";
 import {
   type InterviewDetail,
+  INTERVIEW_ANSWER_MAX_LENGTH,
   getInterview,
   saveInterviewAnswer,
   startInterview,
@@ -272,7 +273,7 @@ export function InterviewSessionClient({ interviewId }: InterviewSessionClientPr
             <div className="answer-field">
               <label htmlFor="interview-answer">你的回答</label>
               <div className="answer-textarea-wrap">
-                <textarea id="interview-answer" maxLength={5000} value={answers[question.id] ?? ""} onChange={(event) => handleAnswerChange(question.id, event.target.value)} placeholder="请输入你的回答，可结合项目中的实际实现说明。" />
+                <textarea id="interview-answer" maxLength={INTERVIEW_ANSWER_MAX_LENGTH} value={answers[question.id] ?? ""} onChange={(event) => handleAnswerChange(question.id, event.target.value)} placeholder="请输入你的回答，可结合项目中的实际实现说明。" />
                 <span className="answer-character-count" aria-live="polite">{characterCount(answers[question.id] ?? "")} 字</span>
               </div>
             </div>

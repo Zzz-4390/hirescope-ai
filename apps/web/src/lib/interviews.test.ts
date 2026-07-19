@@ -12,6 +12,9 @@ import {
 } from "./interviews";
 
 describe("interviews api", () => {
+  const interviewId = "6d9368a0-193f-4b3b-8878-0f565bc8d85d";
+  const questionId = "f11411af-9e31-46f8-a6f4-8f31d64d3359";
+
   beforeEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
@@ -33,19 +36,25 @@ describe("interviews api", () => {
   });
 
   it("sends the answer DTO as JSON to the question UUID route", async () => {
-    const questionId = "11111111-1111-4111-8111-111111111111";
     const fetchMock = mockJson({ id: "answer-1" });
+    const inputWithExtraField = { content: " answer ", questionId };
 
-    await saveInterviewAnswer("interview-1", questionId, { content: "answer" });
+    await saveInterviewAnswer(interviewId, questionId, inputWithExtraField);
 
     const [path, init] = fetchMock.mock.calls[0]!;
-    expect(path).toBe(`/api/v1/interviews/interview-1/answers/${questionId}`);
+    expect(path).toBe(`/api/v1/interviews/${interviewId}/answers/${questionId}`);
     expect(init).toEqual(expect.objectContaining({
       method: "PUT",
       credentials: "include",
       body: JSON.stringify({ content: "answer" }),
     }));
     expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  it.each(["", "   ", "a".repeat(5001)])("rejects invalid answer content before sending: %s", (content) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    expect(() => saveInterviewAnswer(interviewId, questionId, { content })).toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("lists interview history with pagination", async () => {
