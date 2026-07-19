@@ -157,7 +157,7 @@ export function InterviewSessionClient({ interviewId }: InterviewSessionClientPr
     }
     setSaveState("saving");
     try {
-      const saved = await saveInterviewAnswer(interviewId, questionId, normalized);
+      const saved = await saveInterviewAnswer(interviewId, questionId, { content: normalized });
       savedAnswersRef.current = { ...savedAnswersRef.current, [questionId]: saved.content };
       if ((answersRef.current[questionId] ?? "").trim() === saved.content) {
         setSaveState("saved");

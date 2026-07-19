@@ -20,7 +20,6 @@ describe("interviews api", () => {
   it.each([
     ["create", () => createInterview("project-1", { questionCount: 5, difficulty: "MEDIUM" }), "/api/v1/projects/project-1/interviews", "POST", { questionCount: 5, difficulty: "MEDIUM" }],
     ["start", () => startInterview("interview-1"), "/api/v1/interviews/interview-1/start", "POST", undefined],
-    ["save", () => saveInterviewAnswer("interview-1", "question-1", "answer"), "/api/v1/interviews/interview-1/answers/question-1", "PUT", { content: "answer" }],
     ["submit", () => submitInterview("interview-1"), "/api/v1/interviews/interview-1/submit", "POST", undefined],
     ["create report", () => createInterviewReport("interview-1"), "/api/v1/interviews/interview-1/report", "POST", undefined],
   ])("calls the %s mutation route", async (_name, request, path, method, body) => {
@@ -31,6 +30,22 @@ describe("interviews api", () => {
       credentials: "include",
       ...(body ? { body: JSON.stringify(body) } : {}),
     }));
+  });
+
+  it("sends the answer DTO as JSON to the question UUID route", async () => {
+    const questionId = "11111111-1111-4111-8111-111111111111";
+    const fetchMock = mockJson({ id: "answer-1" });
+
+    await saveInterviewAnswer("interview-1", questionId, { content: "answer" });
+
+    const [path, init] = fetchMock.mock.calls[0]!;
+    expect(path).toBe(`/api/v1/interviews/interview-1/answers/${questionId}`);
+    expect(init).toEqual(expect.objectContaining({
+      method: "PUT",
+      credentials: "include",
+      body: JSON.stringify({ content: "answer" }),
+    }));
+    expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
   });
 
   it("lists interview history with pagination", async () => {
