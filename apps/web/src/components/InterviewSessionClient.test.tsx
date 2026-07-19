@@ -7,8 +7,13 @@ import { findInterviewProject } from "../lib/project-collections";
 import { InterviewSessionClient } from "./InterviewSessionClient";
 
 const push = vi.fn();
+const QUESTION_IDS = [
+  "f11411af-9e31-46f8-a6f4-8f31d64d3359",
+  "9674e25d-9787-43a9-a7c8-407448d45326",
+];
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../lib/interviews", () => ({
+  INTERVIEW_ANSWER_MAX_LENGTH: 5000,
   getInterview: vi.fn(),
   saveInterviewAnswer: vi.fn(),
   startInterview: vi.fn(),
@@ -35,7 +40,7 @@ describe("InterviewSessionClient", () => {
     await user.type(answer, "Redis 用于异步任务状态管理");
     await user.click(screen.getByRole("button", { name: "下一题" }));
 
-    await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledWith("interview-1", "question-1", "Redis 用于异步任务状态管理"));
+    await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledWith("interview-1", QUESTION_IDS[0], "Redis 用于异步任务状态管理"));
     expect(screen.getByText("第 2 / 2 题")).toBeInTheDocument();
     expect(screen.getByText(/已保存/)).toBeInTheDocument();
   });
@@ -87,7 +92,7 @@ function detail(answerContents: Array<string | null>, category = "架构") {
     answeredCount: answerContents.filter(Boolean).length,
     answerProgress: { answeredCount: answerContents.filter(Boolean).length, questionCount: 2, percentage: 50 },
     questions: answerContents.map((content, index) => ({
-      id: `question-${index + 1}`, sequence: index + 1, category, difficulty: "MEDIUM" as const, question: `问题 ${index + 1}`,
+      id: QUESTION_IDS[index], sequence: index + 1, category, difficulty: "MEDIUM" as const, question: `问题 ${index + 1}`,
       answer: content ? { content, answeredAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z" } : null,
     })),
     task: null,

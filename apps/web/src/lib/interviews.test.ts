@@ -12,6 +12,9 @@ import {
 } from "./interviews";
 
 describe("interviews api", () => {
+  const interviewId = "6d9368a0-193f-4b3b-8878-0f565bc8d85d";
+  const questionId = "f11411af-9e31-46f8-a6f4-8f31d64d3359";
+
   beforeEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
@@ -20,7 +23,7 @@ describe("interviews api", () => {
   it.each([
     ["create", () => createInterview("project-1", { questionCount: 5, difficulty: "MEDIUM" }), "/api/v1/projects/project-1/interviews", "POST", { questionCount: 5, difficulty: "MEDIUM" }],
     ["start", () => startInterview("interview-1"), "/api/v1/interviews/interview-1/start", "POST", undefined],
-    ["save", () => saveInterviewAnswer("interview-1", "question-1", "answer"), "/api/v1/interviews/interview-1/answers/question-1", "PUT", { content: "answer" }],
+    ["save", () => saveInterviewAnswer(interviewId, questionId, " answer "), `/api/v1/interviews/${interviewId}/answers/${questionId}`, "PUT", { content: "answer" }],
     ["submit", () => submitInterview("interview-1"), "/api/v1/interviews/interview-1/submit", "POST", undefined],
     ["create report", () => createInterviewReport("interview-1"), "/api/v1/interviews/interview-1/report", "POST", undefined],
   ])("calls the %s mutation route", async (_name, request, path, method, body) => {
@@ -31,6 +34,12 @@ describe("interviews api", () => {
       credentials: "include",
       ...(body ? { body: JSON.stringify(body) } : {}),
     }));
+  });
+
+  it.each(["", "   ", "a".repeat(5001)])("rejects invalid answer content before sending: %s", (content) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    expect(() => saveInterviewAnswer(interviewId, questionId, content)).toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("lists interview history with pagination", async () => {

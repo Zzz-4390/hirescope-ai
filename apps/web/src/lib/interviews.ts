@@ -1,6 +1,9 @@
 import { apiRequest } from "./api";
 import type { AsyncTask } from "./projects";
 
+export const INTERVIEW_ANSWER_MIN_LENGTH = 1;
+export const INTERVIEW_ANSWER_MAX_LENGTH = 5000;
+
 export type InterviewStatus =
   | "GENERATING"
   | "READY"
@@ -145,10 +148,19 @@ export function startInterview(interviewId: string): Promise<InterviewDetail> {
 }
 
 export function saveInterviewAnswer(interviewId: string, questionId: string, content: string): Promise<SavedInterviewAnswer> {
+  const normalizedContent = normalizeInterviewAnswerContent(content);
   return apiRequest<SavedInterviewAnswer>(`/interviews/${interviewId}/answers/${questionId}`, {
     method: "PUT",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content: normalizedContent }),
   });
+}
+
+export function normalizeInterviewAnswerContent(content: string): string {
+  const normalizedContent = content.trim();
+  if (normalizedContent.length < INTERVIEW_ANSWER_MIN_LENGTH || normalizedContent.length > INTERVIEW_ANSWER_MAX_LENGTH) {
+    throw new RangeError(`Interview answer must contain ${INTERVIEW_ANSWER_MIN_LENGTH}-${INTERVIEW_ANSWER_MAX_LENGTH} characters after trimming`);
+  }
+  return normalizedContent;
 }
 
 export function submitInterview(interviewId: string): Promise<InterviewDetail> {
