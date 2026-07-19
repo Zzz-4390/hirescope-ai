@@ -82,6 +82,10 @@ export interface SavedInterviewAnswer {
   currentIndex: number;
 }
 
+export interface SaveInterviewAnswerInput {
+  content: string;
+}
+
 export interface InterviewReportDimensions {
   projectUnderstanding: number;
   technicalAccuracy: number;
@@ -147,11 +151,16 @@ export function startInterview(interviewId: string): Promise<InterviewDetail> {
   return apiRequest<InterviewDetail>(`/interviews/${interviewId}/start`, { method: "POST" });
 }
 
-export function saveInterviewAnswer(interviewId: string, questionId: string, content: string): Promise<SavedInterviewAnswer> {
-  const normalizedContent = normalizeInterviewAnswerContent(content);
+export function saveInterviewAnswer(
+  interviewId: string,
+  questionId: string,
+  input: SaveInterviewAnswerInput,
+): Promise<SavedInterviewAnswer> {
+  const content = normalizeInterviewAnswerContent(input.content);
   return apiRequest<SavedInterviewAnswer>(`/interviews/${interviewId}/answers/${questionId}`, {
     method: "PUT",
-    body: JSON.stringify({ content: normalizedContent }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
   });
 }
 

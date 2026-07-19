@@ -23,7 +23,6 @@ describe("interviews api", () => {
   it.each([
     ["create", () => createInterview("project-1", { questionCount: 5, difficulty: "MEDIUM" }), "/api/v1/projects/project-1/interviews", "POST", { questionCount: 5, difficulty: "MEDIUM" }],
     ["start", () => startInterview("interview-1"), "/api/v1/interviews/interview-1/start", "POST", undefined],
-    ["save", () => saveInterviewAnswer(interviewId, questionId, " answer "), `/api/v1/interviews/${interviewId}/answers/${questionId}`, "PUT", { content: "answer" }],
     ["submit", () => submitInterview("interview-1"), "/api/v1/interviews/interview-1/submit", "POST", undefined],
     ["create report", () => createInterviewReport("interview-1"), "/api/v1/interviews/interview-1/report", "POST", undefined],
   ])("calls the %s mutation route", async (_name, request, path, method, body) => {
@@ -36,9 +35,25 @@ describe("interviews api", () => {
     }));
   });
 
+  it("sends the answer DTO as JSON to the question UUID route", async () => {
+    const fetchMock = mockJson({ id: "answer-1" });
+    const inputWithExtraField = { content: " answer ", questionId };
+
+    await saveInterviewAnswer(interviewId, questionId, inputWithExtraField);
+
+    const [path, init] = fetchMock.mock.calls[0]!;
+    expect(path).toBe(`/api/v1/interviews/${interviewId}/answers/${questionId}`);
+    expect(init).toEqual(expect.objectContaining({
+      method: "PUT",
+      credentials: "include",
+      body: JSON.stringify({ content: "answer" }),
+    }));
+    expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+  });
+
   it.each(["", "   ", "a".repeat(5001)])("rejects invalid answer content before sending: %s", (content) => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
-    expect(() => saveInterviewAnswer(interviewId, questionId, content)).toThrow(RangeError);
+    expect(() => saveInterviewAnswer(interviewId, questionId, { content })).toThrow(RangeError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

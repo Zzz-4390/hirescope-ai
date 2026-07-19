@@ -7,10 +7,6 @@ import { findInterviewProject } from "../lib/project-collections";
 import { InterviewSessionClient } from "./InterviewSessionClient";
 
 const push = vi.fn();
-const QUESTION_IDS = [
-  "f11411af-9e31-46f8-a6f4-8f31d64d3359",
-  "9674e25d-9787-43a9-a7c8-407448d45326",
-];
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../lib/interviews", () => ({
   INTERVIEW_ANSWER_MAX_LENGTH: 5000,
@@ -26,8 +22,8 @@ describe("InterviewSessionClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(findInterviewProject).mockResolvedValue(project());
-    vi.mocked(saveInterviewAnswer).mockImplementation(async (_interviewId, questionId, content) => ({
-      id: `answer-${questionId}`, questionId, content, answeredAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z", currentIndex: 1,
+    vi.mocked(saveInterviewAnswer).mockImplementation(async (_interviewId, questionId, input) => ({
+      id: `answer-${questionId}`, questionId, content: input.content, answeredAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z", currentIndex: 1,
     }));
   });
 
@@ -40,9 +36,39 @@ describe("InterviewSessionClient", () => {
     await user.type(answer, "Redis 用于异步任务状态管理");
     await user.click(screen.getByRole("button", { name: "下一题" }));
 
-    await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledWith("interview-1", QUESTION_IDS[0], "Redis 用于异步任务状态管理"));
+    await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledWith("interview-1", questionId(1), { content: "Redis 用于异步任务状态管理" }));
     expect(screen.getByText("第 2 / 2 题")).toBeInTheDocument();
     expect(screen.getByText(/已保存/)).toBeInTheDocument();
+  });
+
+  it("overwrites an existing answer using the question UUID", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getInterview).mockResolvedValue(detail(["旧答案", null]));
+    render(<InterviewSessionClient interviewId="interview-1" />);
+
+    await user.click(await screen.findByRole("button", { name: "第 1 题，已完成" }));
+    const answer = screen.getByLabelText("你的回答");
+    await user.clear(answer);
+    await user.type(answer, "覆盖后的答案");
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+
+    await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledWith(
+      "interview-1",
+      questionId(1),
+      { content: "覆盖后的答案" },
+    ));
+  });
+
+  it("does not send an empty answer during autosave or question navigation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getInterview).mockResolvedValue(detail([null, null]));
+    render(<InterviewSessionClient interviewId="interview-1" />);
+
+    await user.type(await screen.findByLabelText("你的回答"), "   ");
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+
+    expect(saveInterviewAnswer).not.toHaveBeenCalled();
+    expect(screen.getByText("第 2 / 2 题")).toBeInTheDocument();
   });
 
   it("blocks submission when an answer is incomplete", async () => {
@@ -77,6 +103,7 @@ describe("InterviewSessionClient", () => {
 
     await user.type(await screen.findByLabelText("你的回答"), "需要保存的回答");
     await user.click(screen.getByRole("button", { name: "下一题" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("网络错误");
     await user.click(await screen.findByRole("button", { name: "保存失败，点击重试" }));
 
     await waitFor(() => expect(saveInterviewAnswer).toHaveBeenCalledTimes(2));
@@ -92,11 +119,15 @@ function detail(answerContents: Array<string | null>, category = "架构") {
     answeredCount: answerContents.filter(Boolean).length,
     answerProgress: { answeredCount: answerContents.filter(Boolean).length, questionCount: 2, percentage: 50 },
     questions: answerContents.map((content, index) => ({
-      id: QUESTION_IDS[index], sequence: index + 1, category, difficulty: "MEDIUM" as const, question: `问题 ${index + 1}`,
+      id: questionId(index + 1), sequence: index + 1, category, difficulty: "MEDIUM" as const, question: `问题 ${index + 1}`,
       answer: content ? { content, answeredAt: "2026-07-10T00:00:00.000Z", updatedAt: "2026-07-10T00:00:00.000Z" } : null,
     })),
     task: null,
   };
+}
+
+function questionId(sequence: number): string {
+  return `${String(sequence).padStart(8, "0")}-1111-4111-8111-111111111111`;
 }
 
 function project() {
