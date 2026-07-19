@@ -19,7 +19,6 @@ describe('InterviewsController answer validation', () => {
   const saveAnswer = vi.fn(async (_userId: string, _interviewId: string, questionId: string, content: string) => ({ questionId, content }));
 
   beforeAll(async () => {
-    Reflect.defineMetadata('design:paramtypes', [Object, InterviewAnswerParamsDto, AnswerContentDto], InterviewsController.prototype, 'saveAnswer');
     const moduleRef = await Test.createTestingModule({
       controllers: [InterviewsController],
       providers: [
