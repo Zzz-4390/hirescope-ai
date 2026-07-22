@@ -12,6 +12,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks.module';
 import { CodeReviewsModule } from './code-reviews/code-reviews.module';
 import { InterviewsModule } from './interviews/interviews.module';
+import { VersionController } from './version/version.controller';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { InterviewsModule } from './interviews/interviews.module';
     CodeReviewsModule,
     InterviewsModule,
   ],
+  controllers: [VersionController],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     {

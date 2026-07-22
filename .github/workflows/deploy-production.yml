@@ -6,28 +6,158 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy_sha:
+        description: Full 40-character commit SHA from main to deploy
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
+  packages: read
 
 concurrency:
   group: production-deployment
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy to production
+  validate:
+    name: Validate immutable deployment
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
+    outputs:
+      deploy_sha: ${{ steps.validate.outputs.deploy_sha }}
+      api_image: ${{ steps.images.outputs.api_image }}
+      api_digest: ${{ steps.images.outputs.api_digest }}
+      worker_image: ${{ steps.images.outputs.worker_image }}
+      worker_digest: ${{ steps.images.outputs.worker_digest }}
+      web_image: ${{ steps.images.outputs.web_image }}
+      web_digest: ${{ steps.images.outputs.web_digest }}
+      migrate_image: ${{ steps.images.outputs.migrate_image }}
+      migrate_digest: ${{ steps.images.outputs.migrate_digest }}
+
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate deployment SHA and CI provenance
+        id: validate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_DEPLOY_SHA: ${{ inputs.deploy_sha }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -Eeuo pipefail
+          git fetch --force --prune origin main
+          remote_main_tip="$(git rev-parse origin/main)"
+
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
+            [[ "$RUN_CONCLUSION" == success ]]
+            [[ "$RUN_EVENT" == push ]]
+            [[ "$RUN_HEAD_BRANCH" == main ]]
+            [[ "$RUN_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]]
+            deploy_sha="$RUN_HEAD_SHA"
+            [[ "$deploy_sha" == "$remote_main_tip" ]] || {
+              echo "Refusing stale CI rerun: deployment SHA is not the current remote main tip." >&2
+              exit 1
+            }
+          else
+            deploy_sha="${MANUAL_DEPLOY_SHA,,}"
+          fi
+
+          [[ "$deploy_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "deploy_sha must be a full 40-character commit SHA." >&2
+            exit 1
+          }
+          git cat-file -e "${deploy_sha}^{commit}"
+          git merge-base --is-ancestor "$deploy_sha" origin/main || {
+            echo "deploy_sha is not contained in main." >&2
+            exit 1
+          }
+
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            successful_runs="$(gh api -X GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+              -f branch=main -f event=push -f status=success -f head_sha="$deploy_sha" -f per_page=100)"
+            jq -e --arg sha "$deploy_sha" --arg repo "$GITHUB_REPOSITORY" \
+              '.workflow_runs | any(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success" and .head_repository.full_name == $repo)' \
+              <<< "$successful_runs" >/dev/null || {
+                echo "No successful push-main CI run exists for deploy_sha." >&2
+                exit 1
+              }
+          fi
+
+          printf 'deploy_sha=%s\n' "$deploy_sha" >> "$GITHUB_OUTPUT"
+          printf 'Validated deploy SHA: `%s`\n' "$deploy_sha" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Require all immutable images and record registry digests
+        id: images
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.validate.outputs.deploy_sha }}
+        run: |
+          set -Eeuo pipefail
+          repository="${GITHUB_REPOSITORY,,}"
+          printf '### Registry image contract\n\n' >> "$GITHUB_STEP_SUMMARY"
+          for service in api worker web migrate; do
+            image="ghcr.io/${repository}/${service}:${DEPLOY_SHA}"
+            manifest_json="$(docker buildx imagetools inspect "$image" --format '{{json .Manifest}}')"
+            digest="$(jq -er '.digest // .Digest' <<< "$manifest_json")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s_image=%s\n%s_digest=%s\n' "$service" "$image" "$service" "$digest" >> "$GITHUB_OUTPUT"
+            printf -- '- `%s@%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  deploy:
+    name: Deploy exact production images
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
     env:
-      DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_SHA: ${{ needs.validate.outputs.deploy_sha }}
+      API_IMAGE: ${{ needs.validate.outputs.api_image }}
+      API_DIGEST: ${{ needs.validate.outputs.api_digest }}
+      WORKER_IMAGE: ${{ needs.validate.outputs.worker_image }}
+      WORKER_DIGEST: ${{ needs.validate.outputs.worker_digest }}
+      WEB_IMAGE: ${{ needs.validate.outputs.web_image }}
+      WEB_DIGEST: ${{ needs.validate.outputs.web_digest }}
+      MIGRATE_IMAGE: ${{ needs.validate.outputs.migrate_image }}
+      MIGRATE_DIGEST: ${{ needs.validate.outputs.migrate_digest }}
       PROD_WEB_ORIGIN: ${{ vars.PROD_WEB_ORIGIN || format('http://{0}:3000', secrets.PROD_HOST) }}
 
     steps:
+      - name: Checkout deployment files
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.deploy_sha }}
+
       - name: Configure SSH
         shell: bash
         env:
@@ -39,7 +169,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           umask 077
-
           install -d -m 700 "$RUNNER_TEMP/hirescope-ssh"
           printf '%s\n' "$PROD_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/hirescope-ssh/deploy_key"
           printf '%s\n' "$PROD_KNOWN_HOSTS" > "$RUNNER_TEMP/hirescope-ssh/known_hosts"
@@ -55,138 +184,77 @@ jobs:
             printf '  IdentitiesOnly yes\n'
             printf '  LogLevel ERROR\n'
           } > "$RUNNER_TEMP/hirescope-ssh/config"
-
           chmod 600 "$RUNNER_TEMP/hirescope-ssh/deploy_key"
           test -s "$RUNNER_TEMP/hirescope-ssh/known_hosts"
-          ssh-keygen -y -f "$RUNNER_TEMP/hirescope-ssh/deploy_key" > /dev/null
+          ssh-keygen -y -f "$RUNNER_TEMP/hirescope-ssh/deploy_key" >/dev/null
 
-      - name: Deploy exact commit
+      - name: Install exact deployment files
         shell: bash
         run: |
           set -Eeuo pipefail
+          ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production 'install -d -m 700 /opt/hirescope/.deploy'
+          scp -F "$RUNNER_TEMP/hirescope-ssh/config" docker-compose.prod.yml \
+            "production:/opt/hirescope/.deploy/compose-${DEPLOY_SHA}.yml"
+          scp -F "$RUNNER_TEMP/hirescope-ssh/config" .github/scripts/deploy-production.sh \
+            production:/opt/hirescope/.deploy/deploy-production.sh
 
-          if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "Invalid deployment commit SHA."
-            exit 1
-          fi
-
-          web_origin_base64="$(printf '%s' "$PROD_WEB_ORIGIN" | base64 -w 0)"
-          ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production \
-            "bash -se -- '$DEPLOY_SHA' '$web_origin_base64'" <<'REMOTE_SCRIPT'
+      - name: Deploy, migrate, and verify internal runtime identity
+        id: deploy
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           set -Eeuo pipefail
+          public_origin_base64="$(printf '%s' "$PROD_WEB_ORIGIN" | base64 -w 0)"
+          printf '%s\n' "$GHCR_TOKEN" | ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production \
+            "bash /opt/hirescope/.deploy/deploy-production.sh deploy \
+              '$DEPLOY_SHA' '$GITHUB_ACTOR' '$public_origin_base64' \
+              '$API_IMAGE' '$API_DIGEST' '$WORKER_IMAGE' '$WORKER_DIGEST' \
+              '$WEB_IMAGE' '$WEB_DIGEST' '$MIGRATE_IMAGE' '$MIGRATE_DIGEST'"
 
-          target_sha="$1"
-          public_web_origin="$(printf '%s' "$2" | base64 -d)"
-          cd /opt/hirescope
+      - name: Verify public production version endpoints
+        id: external
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$PROD_WEB_ORIGIN" =~ ^https?://[^/]+$ ]]
+          nonce="${DEPLOY_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          headers="$RUNNER_TEMP/version-headers"
+          body="$RUNNER_TEMP/version-body"
 
-          if [[ ! "$public_web_origin" =~ ^https?://[^/]+$ ]]; then
-            echo "Invalid production Web origin."
-            exit 1
-          fi
-
-          export CORS_ALLOWED_ORIGINS="$public_web_origin"
-
-          compose=(docker compose --env-file .env.production -f docker-compose.prod.yml)
-
-          output_failure_logs() {
-            local exit_status=$?
-            trap - EXIT
-
-            if (( exit_status != 0 )); then
-              set +e
-              echo "Deployment failed; collecting recent service logs."
-
-              for service in web api worker postgres redis; do
-                echo "::group::${service} logs"
-                "${compose[@]}" logs --no-color --tail=200 "$service"
-                echo "::endgroup::"
-              done
-            fi
-
-            exit "$exit_status"
-          }
-          trap output_failure_logs EXIT
-
-          git fetch --prune origin main
-          git cat-file -e "${target_sha}^{commit}"
-
-          resolved_sha="$(git rev-parse "${target_sha}^{commit}")"
-          if [[ "$resolved_sha" != "$target_sha" ]]; then
-            echo "Fetched commit does not match the requested deployment SHA."
-            exit 1
-          fi
-
-          if ! git merge-base --is-ancestor "$target_sha" origin/main; then
-            echo "Requested deployment commit is not on origin/main."
-            exit 1
-          fi
-
-          git reset --hard "$target_sha"
-          "${compose[@]}" config --quiet
-
-          export COMPOSE_PARALLEL_LIMIT=1
-          "${compose[@]}" --profile migration build migrate api worker web
-          "${compose[@]}" --profile migration run --rm migrate
-          "${compose[@]}" up -d --remove-orphans --force-recreate api worker web
-
-          wait_for_services() {
-            local deadline=$((SECONDS + 300))
-            local pending=(postgres redis api worker web)
-
-            while (( ${#pending[@]} > 0 && SECONDS < deadline )); do
-              local remaining=()
-              local service container_id status health
-
-              for service in "${pending[@]}"; do
-                container_id="$("${compose[@]}" ps -q "$service")"
-                if [[ -z "$container_id" ]]; then
-                  remaining+=("$service")
-                  continue
-                fi
-
-                status="$(docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || true)"
-                health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id" 2>/dev/null || true)"
-
-                if [[ "$status" == "running" && "$health" == "healthy" ]]; then
-                  echo "$service is $status/$health."
-                  continue
-                fi
-
-                if [[ "$status" == "exited" || "$status" == "dead" || "$health" == "unhealthy" ]]; then
-                  echo "$service failed readiness: status=${status:-missing}, health=${health:-missing}."
-                  return 1
-                fi
-
-                remaining+=("$service")
-              done
-
-              pending=("${remaining[@]}")
-              if (( ${#pending[@]} > 0 )); then
-                sleep 5
-              fi
-            done
-
-            if (( ${#pending[@]} > 0 )); then
-              echo "Timed out waiting for services: ${pending[*]}."
-              return 1
-            fi
-          }
-
-          wait_for_services
           curl -fsS --retry 12 --retry-delay 5 --retry-connrefused --max-time 10 \
-            http://127.0.0.1:3000/ > /dev/null
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' -D "$headers" -o "$body" \
+            "${PROD_WEB_ORIGIN}/_version?deploy_sha=${DEPLOY_SHA}&nonce=${nonce}"
+          grep -Eiq '^cache-control:.*no-store' "$headers"
+          grep -Eiq "^x-app-commit-sha: *${DEPLOY_SHA}" "$headers"
+          grep -Eiq "^x-next-build-id: *${DEPLOY_SHA}" "$headers"
+          jq -e --arg sha "$DEPLOY_SHA" '.commitSha == $sha and .nextBuildId == $sha' "$body" >/dev/null
 
-          logout_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
-            -X POST -H "Origin: $public_web_origin" \
-            http://127.0.0.1:3000/api/v1/auth/logout)"
-          if [[ "$logout_status" != "204" ]]; then
-            echo "Production auth origin smoke failed with HTTP $logout_status."
-            exit 1
-          fi
+          curl -fsS --retry 12 --retry-delay 5 --retry-connrefused --max-time 10 \
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' -D "$headers" -o "$body" \
+            "${PROD_WEB_ORIGIN}/api/v1/version?deploy_sha=${DEPLOY_SHA}&nonce=${nonce}"
+          grep -Eiq '^cache-control:.*no-store' "$headers"
+          jq -e --arg sha "$DEPLOY_SHA" '.commitSha == $sha' "$body" >/dev/null
+          printf 'Public Web and API version checks passed for `%s`.\n' "$DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
 
-          trap - EXIT
-          echo "Production deployment completed for ${target_sha}."
-          REMOTE_SCRIPT
+      - name: Record successful SHA and digests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production \
+            "bash /opt/hirescope/.deploy/deploy-production.sh record-success \
+              '$DEPLOY_SHA' '$API_IMAGE' '$API_DIGEST' '$WORKER_IMAGE' '$WORKER_DIGEST' \
+              '$WEB_IMAGE' '$WEB_DIGEST' '$MIGRATE_IMAGE' '$MIGRATE_DIGEST'"
+
+      - name: Roll back application containers after external verification failure
+        if: failure() && steps.deploy.outcome == 'success'
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s\n' "$GHCR_TOKEN" | ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production \
+            "bash /opt/hirescope/.deploy/deploy-production.sh rollback '$GITHUB_ACTOR'"
 
       - name: Remove SSH files
         if: always()

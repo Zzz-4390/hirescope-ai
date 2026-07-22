@@ -1,11 +1,5 @@
 name: hirescope-ai
 
-x-app-build: &app-build
-  context: .
-  dockerfile: docker/Dockerfile
-  args:
-    NODE_MAX_OLD_SPACE_SIZE: ${DOCKER_BUILD_NODE_MAX_OLD_SPACE_SIZE:-1536}
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -46,9 +40,7 @@ services:
     restart: "no"
 
   migrate:
-    build:
-      <<: *app-build
-      target: migrate
+    image: ${HIRESCOPE_MIGRATE_IMAGE:?HIRESCOPE_MIGRATE_IMAGE is required}
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
     depends_on:
@@ -58,9 +50,7 @@ services:
     restart: "no"
 
   api:
-    build:
-      <<: *app-build
-      target: api
+    image: ${HIRESCOPE_API_IMAGE:?HIRESCOPE_API_IMAGE is required}
     environment:
       NODE_ENV: production
       API_HOST: 0.0.0.0
@@ -117,9 +107,7 @@ services:
     restart: unless-stopped
 
   worker:
-    build:
-      <<: *app-build
-      target: worker
+    image: ${HIRESCOPE_WORKER_IMAGE:?HIRESCOPE_WORKER_IMAGE is required}
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
@@ -159,12 +147,7 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      <<: *app-build
-      target: web
-      args:
-        API_ORIGIN: http://api:3001
-        NODE_MAX_OLD_SPACE_SIZE: ${DOCKER_BUILD_NODE_MAX_OLD_SPACE_SIZE:-1536}
+    image: ${HIRESCOPE_WEB_IMAGE:?HIRESCOPE_WEB_IMAGE is required}
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
