@@ -9,6 +9,9 @@ state_dir="$deployment_root/.deploy"
 current_state="$state_dir/current-success.env"
 previous_state="$state_dir/previous-success.env"
 env_file="$deployment_root/.env.production"
+deploy_env_file="$deployment_root/.env.deploy"
+compose_source_file="$deployment_root/docker-compose.prod.yml"
+deployment_lock="$state_dir/deploy.lock"
 pull_timeout_seconds=600
 pull_max_attempts=3
 migration_timeout_seconds=600
@@ -38,7 +41,7 @@ load_state() {
     local digest_variable="${service}_DIGEST"
     require_digest "${!digest_variable}"
     if [[ "$STATE_KIND" == immutable ]]; then
-      [[ "${!image_variable}" == ghcr.io/*:"$DEPLOY_SHA" ]]
+      [[ "${!image_variable}" =~ ^[a-z0-9.-]+(:[0-9]+)?/[a-z0-9._/-]+:"$DEPLOY_SHA"$ ]]
     elif [[ "$STATE_KIND" == local-image ]]; then
       [[ "${!image_variable}" == "${!digest_variable}" ]]
     else
@@ -49,13 +52,26 @@ load_state() {
   test -s "$COMPOSE_FILE"
 }
 
-login_ghcr() {
-  local registry_user="$1"
-  local registry_token
-  IFS= read -r registry_token
-  test -n "$registry_token"
-  printf '%s' "$registry_token" | docker login ghcr.io --username "$registry_user" --password-stdin >/dev/null
-  unset registry_token
+read_deploy_value() {
+  local key="$1"
+  local value
+  value="$(sed -n "s/^${key}=//p" "$deploy_env_file")"
+  [[ "$value" != *$'\n'* ]]
+  printf '%s' "$value"
+}
+
+load_deploy_config() {
+  test -s "$deploy_env_file"
+  ACR_PUBLIC_REGISTRY="$(read_deploy_value ACR_PUBLIC_REGISTRY)"
+  ACR_NAMESPACE="$(read_deploy_value ACR_NAMESPACE)"
+  [[ "$ACR_PUBLIC_REGISTRY" =~ ^[a-z0-9.-]+(:[0-9]+)?$ ]] || {
+    echo "ACR_PUBLIC_REGISTRY must be the exact public Registry domain without a scheme or path." >&2
+    return 1
+  }
+  [[ "$ACR_NAMESPACE" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || {
+    echo "ACR_NAMESPACE is invalid." >&2
+    return 1
+  }
 }
 
 set_image_environment() {
@@ -71,6 +87,17 @@ image_has_digest() {
   local repository="${image%:*}"
   docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' \
     | grep -Fqx "${repository}@${digest}"
+}
+
+get_image_digest() {
+  local image="$1"
+  local repository="${image%:*}"
+  local digest_reference
+  digest_reference="$(docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+    | grep -F "${repository}@" | head -n 1)"
+  local digest="${digest_reference#*@}"
+  require_digest "$digest"
+  printf '%s' "$digest"
 }
 
 pull_service_image() {
@@ -213,25 +240,33 @@ snapshot_legacy_rollback_state() {
   local fallback_compose_file="$1"
   local API_IMAGE API_DIGEST WORKER_IMAGE WORKER_DIGEST WEB_IMAGE WEB_DIGEST
   local MIGRATE_IMAGE MIGRATE_DIGEST
-  test -s "$deployment_root/docker-compose.prod.yml"
+  test -s "$fallback_compose_file"
   local legacy_sha
-  legacy_sha="$(git -C "$deployment_root" rev-parse HEAD)"
+  local api_container_id
+  api_container_id="$(docker ps -q \
+    --filter label=com.docker.compose.project=hirescope-ai \
+    --filter label=com.docker.compose.service=api | head -n 1)"
+  test -n "$api_container_id"
+  legacy_sha="$(docker inspect "$api_container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | sed -n 's/^APP_COMMIT_SHA=//p')"
+  if [[ ! "$legacy_sha" =~ ^[0-9a-f]{40}$ ]] && git -C "$deployment_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    legacy_sha="$(git -C "$deployment_root" rev-parse HEAD)"
+  fi
   require_sha "$legacy_sha"
 
-  local legacy_compose=(docker compose --env-file "$env_file" -f "$deployment_root/docker-compose.prod.yml")
   local service container_id image_id
   for service in api worker web; do
-    container_id="$("${legacy_compose[@]}" ps -q "$service")"
+    container_id="$(docker ps -q \
+      --filter label=com.docker.compose.project=hirescope-ai \
+      --filter "label=com.docker.compose.service=${service}" | head -n 1)"
     test -n "$container_id"
     image_id="$(docker inspect "$container_id" --format '{{.Image}}')"
     require_digest "$image_id"
     printf -v "${service^^}_IMAGE" '%s' "$image_id"
     printf -v "${service^^}_DIGEST" '%s' "$image_id"
   done
-  image_id="$("${legacy_compose[@]}" --profile migration images -q migrate)"
-  require_digest "$image_id"
-  MIGRATE_IMAGE="$image_id"
-  MIGRATE_DIGEST="$image_id"
+  MIGRATE_IMAGE="$API_IMAGE"
+  MIGRATE_DIGEST="$API_DIGEST"
 
   umask 077
   {
@@ -257,10 +292,14 @@ rollback_apps() {
   local compose=(docker compose --env-file "$env_file" -f "$COMPOSE_FILE")
   if [[ "$STATE_KIND" == immutable ]]; then
     for service in api worker web; do
-      pull_service_image compose "$service"
+      local image_variable="${service^^}_IMAGE"
+      local digest_variable="${service^^}_DIGEST"
+      if ! image_has_digest "${!image_variable}" "${!digest_variable}"; then
+        pull_service_image compose "$service"
+      fi
     done
   fi
-  "${compose[@]}" up -d --force-recreate api worker web
+  "${compose[@]}" up --no-deps -d --force-recreate api worker web
   wait_for_app_services compose
   local require_identity=true
   [[ "$STATE_KIND" == immutable ]] || require_identity=false
@@ -272,52 +311,46 @@ rollback_apps() {
 
 deploy() {
   local target_sha="$1"
-  local registry_user="$2"
-  local public_origin_base64="$3"
-  API_IMAGE="$4"
-  API_DIGEST="$5"
-  WORKER_IMAGE="$6"
-  WORKER_DIGEST="$7"
-  WEB_IMAGE="$8"
-  WEB_DIGEST="$9"
-  MIGRATE_IMAGE="${10}"
-  MIGRATE_DIGEST="${11}"
   COMPOSE_FILE="$state_dir/compose-${target_sha}.yml"
 
   require_sha "$target_sha"
-  for digest in "$API_DIGEST" "$WORKER_DIGEST" "$WEB_DIGEST" "$MIGRATE_DIGEST"; do require_digest "$digest"; done
-  for image in "$API_IMAGE" "$WORKER_IMAGE" "$WEB_IMAGE" "$MIGRATE_IMAGE"; do
-    [[ "$image" == ghcr.io/*:"$target_sha" ]]
-  done
-  test -s "$COMPOSE_FILE"
+  load_deploy_config
   test -s "$env_file"
+  test -s "$compose_source_file"
 
-  local public_origin
-  public_origin="$(printf '%s' "$public_origin_base64" | base64 --decode)"
-  [[ "$public_origin" =~ ^https?://[^/]+$ ]]
-  export CORS_ALLOWED_ORIGINS="$public_origin"
+  API_IMAGE="$ACR_PUBLIC_REGISTRY/$ACR_NAMESPACE/api:$target_sha"
+  WORKER_IMAGE="$ACR_PUBLIC_REGISTRY/$ACR_NAMESPACE/worker:$target_sha"
+  WEB_IMAGE="$ACR_PUBLIC_REGISTRY/$ACR_NAMESPACE/web:$target_sha"
+  MIGRATE_IMAGE="$ACR_PUBLIC_REGISTRY/$ACR_NAMESPACE/migrate:$target_sha"
+
+  install -m 600 "$compose_source_file" "$COMPOSE_FILE"
   set_image_environment
 
   local compose=(docker compose --env-file "$env_file" -f "$COMPOSE_FILE")
   "${compose[@]}" config --quiet
-  login_ghcr "$registry_user"
   local service
   for service in migrate api worker web; do
     pull_service_image compose "$service"
   done
 
-  image_has_digest "$API_IMAGE" "$API_DIGEST"
-  image_has_digest "$WORKER_IMAGE" "$WORKER_DIGEST"
-  image_has_digest "$WEB_IMAGE" "$WEB_DIGEST"
-  image_has_digest "$MIGRATE_IMAGE" "$MIGRATE_DIGEST"
+  API_DIGEST="$(get_image_digest "$API_IMAGE")"
+  WORKER_DIGEST="$(get_image_digest "$WORKER_IMAGE")"
+  WEB_DIGEST="$(get_image_digest "$WEB_IMAGE")"
+  MIGRATE_DIGEST="$(get_image_digest "$MIGRATE_IMAGE")"
 
-  for service_image in "$API_IMAGE" "$WORKER_IMAGE" "$WEB_IMAGE"; do
+  for service_image in "$API_IMAGE" "$WORKER_IMAGE" "$WEB_IMAGE" "$MIGRATE_IMAGE"; do
     [[ "$(docker image inspect "$service_image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == "$target_sha" ]]
   done
 
-  if ! test -s "$current_state"; then
-    snapshot_legacy_rollback_state "$COMPOSE_FILE"
-    set_image_environment
+  if test -s "$current_state"; then
+    (load_state "$current_state")
+  elif docker ps -q \
+    --filter label=com.docker.compose.project=hirescope-ai \
+    --filter label=com.docker.compose.service=api | grep -q .; then
+      snapshot_legacy_rollback_state "$COMPOSE_FILE"
+      set_image_environment
+  else
+    echo "No running application baseline exists; the first deployment cannot roll back applications automatically."
   fi
 
   run_migration compose
@@ -334,8 +367,8 @@ deploy() {
   }
   trap on_deploy_failure ERR
 
-  "${compose[@]}" up -d --force-recreate api worker web
   new_containers_started=true
+  "${compose[@]}" up --no-deps -d --force-recreate api worker web
   wait_for_app_services compose
   verify_running_service compose api "$API_IMAGE" "$target_sha"
   verify_running_service compose worker "$WORKER_IMAGE" "$target_sha"
@@ -363,15 +396,6 @@ deploy() {
   grep -Fq "\"commitSha\":\"${target_sha}\"" "$body_file"
   grep -Fq "\"nextBuildId\":\"${target_sha}\"" "$body_file"
 
-  local logout_status
-  logout_status="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 \
-    -X POST -H "Origin: $public_origin" \
-    http://127.0.0.1:3000/api/v1/auth/logout)"
-  [[ "$logout_status" == 204 ]] || {
-    echo "Production auth origin smoke failed with HTTP $logout_status." >&2
-    return 1
-  }
-
   local worker_id
   worker_id="$(run_health_command "worker log container lookup" "${compose[@]}" ps -q worker)"
   local worker_logs
@@ -379,6 +403,9 @@ deploy() {
   grep -Fq "Worker starting commit_sha=${target_sha}" <<< "$worker_logs"
 
   trap - ERR
+  record_success "$target_sha" \
+    "$API_IMAGE" "$API_DIGEST" "$WORKER_IMAGE" "$WORKER_DIGEST" \
+    "$WEB_IMAGE" "$WEB_DIGEST" "$MIGRATE_IMAGE" "$MIGRATE_DIGEST"
   echo "Internal image, OCI revision, runtime SHA, API, Web, and Worker checks passed for $target_sha."
 }
 
@@ -414,17 +441,18 @@ record_success() {
 
 case "$action" in
   deploy)
-    (( $# == 11 )) || { echo "Invalid deploy arguments." >&2; exit 2; }
+    (( $# == 1 )) || { echo "Usage: $0 deploy <full-commit-sha>" >&2; exit 2; }
+    install -d -m 700 "$state_dir"
+    exec 9>"$deployment_lock"
+    flock -n 9 || { echo "Another production deployment is already running." >&2; exit 1; }
     deploy "$@"
     ;;
   rollback)
-    (( $# == 1 )) || { echo "Invalid rollback arguments." >&2; exit 2; }
-    login_ghcr "$1"
+    (( $# == 0 )) || { echo "Usage: $0 rollback" >&2; exit 2; }
+    install -d -m 700 "$state_dir"
+    exec 9>"$deployment_lock"
+    flock -n 9 || { echo "Another production deployment is already running." >&2; exit 1; }
     rollback_apps
-    ;;
-  record-success)
-    (( $# == 9 )) || { echo "Invalid record arguments." >&2; exit 2; }
-    record_success "$@"
     ;;
   *)
     echo "Unknown action: $action" >&2

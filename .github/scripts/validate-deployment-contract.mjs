@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(path, "utf8");
 const ci = read(".github/workflows/ci.yml");
-const deployWorkflow = read(".github/workflows/deploy-production.yml");
 const deployScript = read(".github/scripts/deploy-production.sh");
 const compose = read("docker-compose.prod.yml");
 const dockerfile = read("docker/Dockerfile");
+const documentation = read("docs/production-deployment.md");
+const buildStep = ci.slice(
+  ci.indexOf("Build once and push immutable image to ACR and GHCR"),
+  ci.indexOf("Record image digest"),
+);
 const deployFunction = deployScript.slice(
   deployScript.indexOf("deploy() {"),
   deployScript.indexOf("\nrecord_success() {"),
@@ -18,51 +22,56 @@ for (const service of ["api", "worker", "web", "migrate"]) {
     compose.includes(`  ${service}:\n    image: ` + "${HIRESCOPE_" + `${upper}_IMAGE:`),
     `${service} must use its configured immutable image`,
   );
+  assert.ok(
+    ci.includes(`$ACR_PUBLIC_REGISTRY/$ACR_NAMESPACE/${service}`) ||
+      ci.includes('"${{ matrix.target }}"'),
+    `${service} must be published to ACR`,
+  );
 }
 
+assert.equal(
+  existsSync(".github/workflows/deploy-production.yml"),
+  false,
+  "automatic production CD workflow must remain removed",
+);
 assert.match(ci, /target: \[api, worker, web, migrate\]/);
-assert.match(ci, /tags: \$\{\{ steps\.image\.outputs\.name \}\}:\$\{\{ github\.sha \}\}/);
+assert.match(ci, /registry: \$\{\{ vars\.ACR_PUBLIC_REGISTRY \}\}/);
+assert.match(ci, /username: \$\{\{ secrets\.ACR_PUSH_USERNAME \}\}/);
+assert.match(ci, /password: \$\{\{ secrets\.ACR_PUSH_PASSWORD \}\}/);
+assert.match(ci, /registry: ghcr\.io/);
+assert.match(buildStep, /\$\{\{ steps\.image\.outputs\.acr \}\}:\$\{\{ github\.sha \}\}/);
+assert.match(buildStep, /\$\{\{ steps\.image\.outputs\.ghcr \}\}:\$\{\{ github\.sha \}\}/);
+assert.match(ci, /APP_COMMIT_SHA=\$\{\{ github\.sha \}\}/);
+assert.match(ci, /labels: org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}/);
+assert.match(ci, /Production ACR:/);
+assert.match(ci, /Backup GHCR:/);
 
 assert.doesNotMatch(compose, /APP_COMMIT_SHA/);
 assert.doesNotMatch(compose, /^\s+build:/m);
 assert.match(compose, /postgres:\n    image: postgres:16-alpine/);
 assert.match(compose, /redis:\n    image: redis:7-alpine/);
 assert.match(compose, /storage-init:\n    image: busybox:1\.36/);
+assert.equal(
+  (dockerfile.match(/LABEL org\.opencontainers\.image\.revision=\$APP_COMMIT_SHA/g) ?? []).length,
+  4,
+);
 
-assert.match(ci, /APP_COMMIT_SHA=\$\{\{ github\.sha \}\}/);
-assert.match(ci, /labels: org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}/);
-assert.equal((dockerfile.match(/LABEL org\.opencontainers\.image\.revision=\$APP_COMMIT_SHA/g) ?? []).length, 4);
-
-assert.match(deployWorkflow, /github\.event\.workflow_run\.head_branch == 'main'/);
-assert.match(deployWorkflow, /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/);
-assert.match(deployWorkflow, /Refusing stale CI rerun/);
-assert.match(deployWorkflow, /git merge-base --is-ancestor "\$deploy_sha" origin\/main/);
-assert.match(deployWorkflow, /No successful push-main CI run exists for deploy_sha/);
-
-assert.match(deployWorkflow, /deploy:\n(?:.|\n)*?timeout-minutes: 60/);
-assert.match(deployScript, /pull_timeout_seconds=600/);
-assert.match(deployScript, /pull_max_attempts=3/);
-assert.match(deployScript, /migration_timeout_seconds=600/);
-assert.match(deployScript, /health_command_timeout_seconds=15/);
-assert.match(deployScript, /env COMPOSE_PARALLEL_LIMIT=1/);
+assert.match(deployScript, /deploy_env_file="\$deployment_root\/\.env\.deploy"/);
+assert.match(deployScript, /ACR_PUBLIC_REGISTRY="\$\(read_deploy_value ACR_PUBLIC_REGISTRY\)"/);
+assert.match(deployScript, /ACR_NAMESPACE="\$\(read_deploy_value ACR_NAMESPACE\)"/);
 assert.match(deployScript, /for service in migrate api worker web; do\n\s+pull_service_image compose "\$service"/);
-assert.match(deployScript, /Image pull started: \$service/);
-assert.match(deployScript, /Image pull attempt \$\{attempt\}\/\$\{pull_max_attempts\}: \$service/);
-assert.match(deployScript, /Image pull completed: \$service on attempt \$attempt/);
-assert.match(deployScript, /Image pull failed: \$service/);
 assert.match(deployScript, /run_migration compose/);
-assert.match(deployScript, /timeout --signal=TERM --kill-after=30s "\$\{migration_timeout_seconds\}s"/);
-assert.match(deployScript, /run_health_command "\$service container status"/);
-assert.match(deployScript, /--connect-timeout 5 --max-time "\$health_command_timeout_seconds"/);
-assert.match(deployScript, /"\$\{compose\[@\]\}" up -d --force-recreate api worker web/);
+assert.match(deployScript, /"\$\{compose\[@\]\}" up --no-deps -d --force-recreate api worker web/);
 assert.ok(
   deployFunction.indexOf("run_migration compose") <
-    deployFunction.indexOf('${compose[@]}" up -d --force-recreate api worker web'),
+    deployFunction.indexOf('up --no-deps -d --force-recreate api worker web'),
   "migration must finish before application containers are updated",
 );
-assert.doesNotMatch(deployScript, /pull migrate api worker web/);
-assert.doesNotMatch(deployScript, /"\$\{compose\[@\]\}" up -d --force-recreate\s*$/m);
-assert.doesNotMatch(deployScript, /up -d --force-recreate[^\n]*(?:postgres|redis)/);
+assert.doesNotMatch(deployScript, /docker login ghcr\.io/);
 assert.doesNotMatch(deployScript, /docker compose[^\n]*build/);
+assert.doesNotMatch(deployScript, /docker build|pnpm (?:build|deploy)/);
+assert.doesNotMatch(deployScript, /up[^\n]*force-recreate[^\n]*(?:postgres|redis|storage-init)/);
+assert.match(documentation, /ACR is the production source\. GHCR is a backup/);
+assert.match(documentation, /deploy-production\.sh deploy <full-40-character-commit-sha>/);
 
-console.log("Immutable deployment contracts are valid.");
+console.log("ACR publication and manual deployment contracts are valid.");

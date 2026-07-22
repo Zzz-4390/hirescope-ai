@@ -79,9 +79,9 @@ pnpm --filter @hirescope/web dev -- --port 4200
 
 默认示例使用 Web `4200`、API `4201`。若修改端口，必须同步调整 `.env` 中的 `API_PORT`、`CORS_ALLOWED_ORIGINS`，以及 Web 进程的 `API_ORIGIN`。
 
-## 生产 Docker 启动
+## 生产镜像与人工部署
 
-这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。当前示例支持通过 `http://114.55.102.140:3000` 直接访问；上线后仍建议尽快接入 TLS 和持久化备份。
+这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。GitHub Actions 在 `main` 通过完整验证后构建 `api`、`worker`、`web`、`migrate` 四个完整 SHA 镜像，同一次构建推送到杭州 ACR 和备用 GHCR；生产服务器默认只从 ACR 拉取。GitHub Actions 不连接生产服务器，也不自动部署。
 
 1. 创建真实生产环境文件并设置仅属主可读权限：
 
@@ -92,29 +92,27 @@ pnpm --filter @hirescope/web dev -- --port 4200
 
 2. 替换全部示例占位值，包括 `replace_with_*` 和 `replace-with-private-bucket`；保证 `POSTGRES_PASSWORD` 与 `DATABASE_URL`、`REDIS_PASSWORD` 与 `REDIS_URL` 一致。URL 中的特殊字符必须进行 percent-encoding。OSS 应使用私有 Bucket 和仅允许头像对象读写的最小权限凭据。
 3. 直连公网 IP 时使用 `CORS_ALLOWED_ORIGINS=http://114.55.102.140:3000`、`AUTH_COOKIE_SECURE=false`、`AUTH_COOKIE_NAME=hirescope_refresh`、`TRUST_PROXY_HOPS=0` 和 `WEB_BIND_ADDRESS=0.0.0.0`。若改为 HTTPS 反向代理，则把 Origin 改为精确 HTTPS 地址，设置 `AUTH_COOKIE_SECURE=true`、使用 `__Secure-` Cookie 名，并让 `TRUST_PROXY_HOPS` 等于可信代理的实际跳数。
-4. 校验配置并构建镜像：
+4. 按 [`docs/production-deployment.md`](docs/production-deployment.md) 完成一次性部署文件安装、`.env.deploy` 配置和 ACR 登录。
+5. SSH 登录生产服务器，使用已成功发布镜像的完整 40 位 commit SHA 手动部署：
 
    ```bash
-   docker compose --env-file .env.production -f docker-compose.prod.yml config
-   docker compose --env-file .env.production -f docker-compose.prod.yml build
+   sudo /opt/hirescope/.deploy/deploy-production.sh deploy <full-40-character-commit-sha>
    ```
 
-5. 先启动基础设施并执行迁移，再启动应用：
+   脚本只拉取 ACR 镜像，先执行 `migrate`；迁移成功后才重建 `api`、`worker`、`web`。服务器不执行 `docker build`、`docker compose build`、`pnpm build` 或 `pnpm deploy`，也不会强制重建 PostgreSQL、Redis 或 `storage-init`。
+
+6. 部署后检查容器状态、日志和公网版本端点：
 
    ```bash
-   docker compose --env-file .env.production -f docker-compose.prod.yml up -d postgres redis storage-init
-   docker compose --env-file .env.production -f docker-compose.prod.yml --profile migration run --rm migrate
-   docker compose --env-file .env.production -f docker-compose.prod.yml up -d api worker web
-   docker compose --env-file .env.production -f docker-compose.prod.yml ps
+   sudo docker ps --filter label=com.docker.compose.project=hirescope-ai
+   sudo docker logs --tail=200 "$(sudo docker ps -q --filter label=com.docker.compose.project=hirescope-ai --filter label=com.docker.compose.service=api)"
+   sudo docker logs --tail=200 "$(sudo docker ps -q --filter label=com.docker.compose.project=hirescope-ai --filter label=com.docker.compose.service=worker)"
+   sudo docker logs --tail=200 "$(sudo docker ps -q --filter label=com.docker.compose.project=hirescope-ai --filter label=com.docker.compose.service=web)"
+   curl -fsS -H 'Cache-Control: no-cache' 'https://<production-origin>/_version?deploy_sha=<commit-sha>'
+   curl -fsS -H 'Cache-Control: no-cache' 'https://<production-origin>/api/v1/version?deploy_sha=<commit-sha>'
    ```
 
-6. 访问 `http://114.55.102.140:3000`，并检查容器日志：
-
-   ```bash
-   docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=200 api worker web
-   ```
-
-升级时先备份 PostgreSQL、Redis AOF 和 `storage_data`，拉取已验收提交后重新构建，执行 `migrate`，再滚动重建应用容器。不要运行 `prisma migrate dev` 或 `db:reset`。
+升级前先备份 PostgreSQL、Redis AOF 和 `storage_data`。生产迁移仅由发布好的 `migrate` 镜像执行；不要运行 `prisma migrate dev`、`db:migrate` 或 `db:reset`。
 
 ### 健康检查
 
@@ -171,8 +169,8 @@ pnpm api:build
 pnpm worker:typecheck
 pnpm worker:test
 pnpm worker:build
-docker compose --env-file .env.production -f docker-compose.prod.yml config
-docker compose --env-file .env.production -f docker-compose.prod.yml build
+node .github/scripts/validate-deployment-contract.mjs
+bash -n .github/scripts/deploy-production.sh
 ```
 
 需要真实 PostgreSQL、Redis 或浏览器的 E2E / 集成测试按 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 的隔离测试环境执行。
