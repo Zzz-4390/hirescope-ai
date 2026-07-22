@@ -7,6 +7,10 @@ const deployWorkflow = read(".github/workflows/deploy-production.yml");
 const deployScript = read(".github/scripts/deploy-production.sh");
 const compose = read("docker-compose.prod.yml");
 const dockerfile = read("docker/Dockerfile");
+const deployFunction = deployScript.slice(
+  deployScript.indexOf("deploy() {"),
+  deployScript.indexOf("\nrecord_success() {"),
+);
 
 for (const service of ["api", "worker", "web", "migrate"]) {
   const upper = service.toUpperCase();
@@ -35,11 +39,28 @@ assert.match(deployWorkflow, /Refusing stale CI rerun/);
 assert.match(deployWorkflow, /git merge-base --is-ancestor "\$deploy_sha" origin\/main/);
 assert.match(deployWorkflow, /No successful push-main CI run exists for deploy_sha/);
 
-assert.match(deployScript, /"\$\{compose\[@\]\}" --profile migration pull migrate api worker web/);
-assert.match(deployScript, /"\$\{compose\[@\]\}" --profile migration run --rm migrate/);
+assert.match(deployWorkflow, /deploy:\n(?:.|\n)*?timeout-minutes: 60/);
+assert.match(deployScript, /pull_timeout_seconds=900/);
+assert.match(deployScript, /migration_timeout_seconds=600/);
+assert.match(deployScript, /health_command_timeout_seconds=15/);
+assert.match(deployScript, /env COMPOSE_PARALLEL_LIMIT=1/);
+assert.match(deployScript, /for service in migrate api worker web; do\n\s+pull_service_image compose "\$service"/);
+assert.match(deployScript, /Image pull started: \$service/);
+assert.match(deployScript, /Image pull completed: \$service/);
+assert.match(deployScript, /Image pull failed: \$service/);
+assert.match(deployScript, /run_migration compose/);
+assert.match(deployScript, /timeout --signal=TERM --kill-after=30s "\$\{migration_timeout_seconds\}s"/);
+assert.match(deployScript, /run_health_command "\$service container status"/);
+assert.match(deployScript, /--connect-timeout 5 --max-time "\$health_command_timeout_seconds"/);
 assert.match(deployScript, /"\$\{compose\[@\]\}" up -d --force-recreate api worker web/);
-assert.doesNotMatch(deployScript, /"\$\{compose\[@\]\}" (?:--profile migration )?pull\s*$/m);
+assert.ok(
+  deployFunction.indexOf("run_migration compose") <
+    deployFunction.indexOf('${compose[@]}" up -d --force-recreate api worker web'),
+  "migration must finish before application containers are updated",
+);
+assert.doesNotMatch(deployScript, /pull migrate api worker web/);
 assert.doesNotMatch(deployScript, /"\$\{compose\[@\]\}" up -d --force-recreate\s*$/m);
 assert.doesNotMatch(deployScript, /up -d --force-recreate[^\n]*(?:postgres|redis)/);
+assert.doesNotMatch(deployScript, /docker compose[^\n]*build/);
 
 console.log("Immutable deployment contracts are valid.");

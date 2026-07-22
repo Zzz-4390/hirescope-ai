@@ -9,6 +9,10 @@ state_dir="$deployment_root/.deploy"
 current_state="$state_dir/current-success.env"
 previous_state="$state_dir/previous-success.env"
 env_file="$deployment_root/.env.production"
+pull_timeout_seconds=900
+migration_timeout_seconds=600
+health_command_timeout_seconds=15
+health_deadline_seconds=300
 
 require_sha() {
   [[ "$1" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid full commit SHA." >&2; return 1; }
@@ -68,22 +72,88 @@ image_has_digest() {
     | grep -Fqx "${repository}@${digest}"
 }
 
+pull_service_image() {
+  local -n compose_command=$1
+  local service="$2"
+  local exit_status
+
+  echo "Image pull started: $service."
+  if timeout --signal=TERM --kill-after=30s "${pull_timeout_seconds}s" \
+    env COMPOSE_PARALLEL_LIMIT=1 \
+    "${compose_command[@]}" --profile migration pull "$service"; then
+    echo "Image pull completed: $service."
+    return 0
+  else
+    exit_status=$?
+  fi
+
+  if (( exit_status == 124 )); then
+    echo "Image pull failed: $service timed out after ${pull_timeout_seconds}s." >&2
+  else
+    echo "Image pull failed: $service exited with status $exit_status." >&2
+  fi
+  return "$exit_status"
+}
+
+run_migration() {
+  local -n compose_command=$1
+  local exit_status
+
+  echo "Migration started."
+  if timeout --signal=TERM --kill-after=30s "${migration_timeout_seconds}s" \
+    "${compose_command[@]}" --profile migration run --rm migrate; then
+    echo "Migration completed."
+    return 0
+  else
+    exit_status=$?
+  fi
+
+  if (( exit_status == 124 )); then
+    echo "Migration failed: timed out after ${migration_timeout_seconds}s." >&2
+  else
+    echo "Migration failed: exited with status $exit_status." >&2
+  fi
+  return "$exit_status"
+}
+
+run_health_command() {
+  local description="$1"
+  shift
+  local exit_status
+
+  if timeout --signal=TERM --kill-after=5s "${health_command_timeout_seconds}s" "$@"; then
+    return 0
+  else
+    exit_status=$?
+  fi
+
+  if (( exit_status == 124 )); then
+    echo "Health check command failed: $description timed out after ${health_command_timeout_seconds}s." >&2
+  else
+    echo "Health check command failed: $description exited with status $exit_status." >&2
+  fi
+  return "$exit_status"
+}
+
 wait_for_app_services() {
   local -n compose_command=$1
-  local deadline=$((SECONDS + 300))
+  local deadline=$((SECONDS + health_deadline_seconds))
   local pending=(api worker web)
 
   while (( ${#pending[@]} > 0 && SECONDS < deadline )); do
     local remaining=()
     local service container_id status health
     for service in "${pending[@]}"; do
-      container_id="$("${compose_command[@]}" ps -q "$service")"
+      container_id="$(run_health_command "$service container lookup" \
+        "${compose_command[@]}" ps -q "$service")"
       if [[ -z "$container_id" ]]; then
         remaining+=("$service")
         continue
       fi
-      status="$(docker inspect --format '{{.State.Status}}' "$container_id")"
-      health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")"
+      status="$(run_health_command "$service container status" \
+        docker inspect --format '{{.State.Status}}' "$container_id")"
+      health="$(run_health_command "$service container health" \
+        docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")"
       if [[ "$status" == running && "$health" == healthy ]]; then
         continue
       fi
@@ -108,15 +178,21 @@ verify_running_service() {
   local require_identity="${5:-true}"
   local container_id expected_image_id actual_image_id revision runtime_sha
 
-  container_id="$("${compose_command[@]}" ps -q "$service")"
+  container_id="$(run_health_command "$service identity container lookup" \
+    "${compose_command[@]}" ps -q "$service")"
   test -n "$container_id"
-  expected_image_id="$(docker image inspect "$image" --format '{{.Id}}')"
-  actual_image_id="$(docker inspect "$container_id" --format '{{.Image}}')"
+  expected_image_id="$(run_health_command "$service expected image lookup" \
+    docker image inspect "$image" --format '{{.Id}}')"
+  actual_image_id="$(run_health_command "$service runtime image lookup" \
+    docker inspect "$container_id" --format '{{.Image}}')"
   [[ "$actual_image_id" == "$expected_image_id" ]]
   [[ "$require_identity" == true ]] || return 0
-  revision="$(docker inspect "$container_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+  revision="$(run_health_command "$service OCI revision lookup" \
+    docker inspect "$container_id" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
   [[ "$revision" == "$expected_sha" ]]
-  runtime_sha="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^APP_COMMIT_SHA=//p')"
+  runtime_sha="$(run_health_command "$service runtime SHA lookup" \
+    docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | sed -n 's/^APP_COMMIT_SHA=//p')"
   [[ "$runtime_sha" == "$expected_sha" ]]
 }
 
@@ -167,7 +243,9 @@ rollback_apps() {
   set_image_environment
   local compose=(docker compose --env-file "$env_file" -f "$COMPOSE_FILE")
   if [[ "$STATE_KIND" == immutable ]]; then
-    "${compose[@]}" pull api worker web
+    for service in api worker web; do
+      pull_service_image compose "$service"
+    done
   fi
   "${compose[@]}" up -d --force-recreate api worker web
   wait_for_app_services compose
@@ -210,7 +288,10 @@ deploy() {
   local compose=(docker compose --env-file "$env_file" -f "$COMPOSE_FILE")
   "${compose[@]}" config --quiet
   login_ghcr "$registry_user"
-  "${compose[@]}" --profile migration pull migrate api worker web
+  local service
+  for service in migrate api worker web; do
+    pull_service_image compose "$service"
+  done
 
   image_has_digest "$API_IMAGE" "$API_DIGEST"
   image_has_digest "$WORKER_IMAGE" "$WORKER_DIGEST"
@@ -226,7 +307,7 @@ deploy() {
     set_image_environment
   fi
 
-  "${compose[@]}" --profile migration run --rm migrate
+  run_migration compose
 
   local new_containers_started=false
   on_deploy_failure() {
@@ -254,12 +335,14 @@ deploy() {
   body_file="$(mktemp)"
   trap 'rm -f "$headers_file" "$body_file"; trap - RETURN' RETURN
 
-  curl -fsS -H 'Cache-Control: no-cache' -D "$headers_file" -o "$body_file" \
+  curl -fsS --connect-timeout 5 --max-time "$health_command_timeout_seconds" \
+    -H 'Cache-Control: no-cache' -D "$headers_file" -o "$body_file" \
     "http://127.0.0.1:3000/api/v1/version?deploy_sha=${target_sha}&nonce=${nonce}"
   grep -Eiq '^cache-control:.*no-store' "$headers_file"
   grep -Fq "\"commitSha\":\"${target_sha}\"" "$body_file"
 
-  curl -fsS -H 'Cache-Control: no-cache' -D "$headers_file" -o "$body_file" \
+  curl -fsS --connect-timeout 5 --max-time "$health_command_timeout_seconds" \
+    -H 'Cache-Control: no-cache' -D "$headers_file" -o "$body_file" \
     "http://127.0.0.1:3000/_version?deploy_sha=${target_sha}&nonce=${nonce}"
   grep -Eiq '^cache-control:.*no-store' "$headers_file"
   grep -Eiq "^x-app-commit-sha: *${target_sha}" "$headers_file"
@@ -268,7 +351,7 @@ deploy() {
   grep -Fq "\"nextBuildId\":\"${target_sha}\"" "$body_file"
 
   local logout_status
-  logout_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+  logout_status="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 \
     -X POST -H "Origin: $public_origin" \
     http://127.0.0.1:3000/api/v1/auth/logout)"
   [[ "$logout_status" == 204 ]] || {
@@ -277,9 +360,9 @@ deploy() {
   }
 
   local worker_id
-  worker_id="$("${compose[@]}" ps -q worker)"
+  worker_id="$(run_health_command "worker log container lookup" "${compose[@]}" ps -q worker)"
   local worker_logs
-  worker_logs="$(docker logs "$worker_id" 2>&1)"
+  worker_logs="$(run_health_command "worker startup log lookup" docker logs "$worker_id" 2>&1)"
   grep -Fq "Worker starting commit_sha=${target_sha}" <<< "$worker_logs"
 
   trap - ERR
