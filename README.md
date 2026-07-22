@@ -79,9 +79,9 @@ pnpm --filter @hirescope/web dev -- --port 4200
 
 默认示例使用 Web `4200`、API `4201`。若修改端口，必须同步调整 `.env` 中的 `API_PORT`、`CORS_ALLOWED_ORIGINS`，以及 Web 进程的 `API_ORIGIN`。
 
-## 生产镜像与人工部署
+## 生产镜像与自动部署
 
-这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。GitHub Actions 在 `main` 通过完整验证后构建 `api`、`worker`、`web`、`migrate` 四个完整 SHA 镜像，同一次构建推送到杭州 ACR 和备用 GHCR；生产服务器默认只从 ACR 拉取。GitHub Actions 不连接生产服务器，也不自动部署。
+这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。GitHub Actions 在 `main` 通过完整验证后构建 `api`、`worker`、`web`、`migrate` 四个完整 SHA 镜像，同一次构建推送到杭州 ACR 和备用 GHCR；四个 ACR 镜像和摘要全部就绪后，独立生产工作流才使用 Production Environment SSH Secrets 连接服务器，并仅调用服务器现有部署脚本。GHCR 只保留为镜像备份，不参与自动部署或自动回退。
 
 1. 创建真实生产环境文件并设置仅属主可读权限：
 
@@ -93,13 +93,13 @@ pnpm --filter @hirescope/web dev -- --port 4200
 2. 替换全部示例占位值，包括 `replace_with_*` 和 `replace-with-private-bucket`；保证 `POSTGRES_PASSWORD` 与 `DATABASE_URL`、`REDIS_PASSWORD` 与 `REDIS_URL` 一致。URL 中的特殊字符必须进行 percent-encoding。OSS 应使用私有 Bucket 和仅允许头像对象读写的最小权限凭据。
 3. 直连公网 IP 时使用 `CORS_ALLOWED_ORIGINS=http://114.55.102.140:3000`、`AUTH_COOKIE_SECURE=false`、`AUTH_COOKIE_NAME=hirescope_refresh`、`TRUST_PROXY_HOPS=0` 和 `WEB_BIND_ADDRESS=0.0.0.0`。若改为 HTTPS 反向代理，则把 Origin 改为精确 HTTPS 地址，设置 `AUTH_COOKIE_SECURE=true`、使用 `__Secure-` Cookie 名，并让 `TRUST_PROXY_HOPS` 等于可信代理的实际跳数。
 4. 按 [`docs/production-deployment.md`](docs/production-deployment.md) 完成一次性部署文件安装、`.env.deploy` 配置和 ACR 登录。
-5. SSH 登录生产服务器，使用已成功发布镜像的完整 40 位 commit SHA 手动部署：
+5. `main` 的成功 push 会自动触发受控生产部署。手动部署必须通过 `workflow_dispatch` 指定属于 `main`、已有成功 CI 且四个 ACR 镜像均已发布的完整 40 位 commit SHA：
 
    ```bash
-   sudo /opt/hirescope/.deploy/deploy-production.sh deploy <full-40-character-commit-sha>
+   gh workflow run deploy-production.yml -f deploy_sha=<full-40-character-commit-sha>
    ```
 
-   脚本只拉取 ACR 镜像，先执行 `migrate`；迁移成功后才重建 `api`、`worker`、`web`。服务器不执行 `docker build`、`docker compose build`、`pnpm build` 或 `pnpm deploy`，也不会强制重建 PostgreSQL、Redis 或 `storage-init`。
+   工作流不上传或覆盖任何生产环境文件，只执行 `sudo /opt/hirescope/.deploy/deploy-production.sh deploy <完整SHA>`。脚本只拉取 ACR 镜像，先执行 `migrate`；迁移成功后才重建 `api`、`worker`、`web`。服务器不执行 `docker build`、`docker compose build`、`pnpm build` 或 `pnpm deploy`，也不会强制重建 PostgreSQL、Redis 或 `storage-init`。
 
 6. 部署后检查容器状态、日志和公网版本端点：
 
