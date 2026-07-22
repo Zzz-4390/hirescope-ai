@@ -9,7 +9,8 @@ state_dir="$deployment_root/.deploy"
 current_state="$state_dir/current-success.env"
 previous_state="$state_dir/previous-success.env"
 env_file="$deployment_root/.env.production"
-pull_timeout_seconds=900
+pull_timeout_seconds=600
+pull_max_attempts=3
 migration_timeout_seconds=600
 health_command_timeout_seconds=15
 health_deadline_seconds=300
@@ -75,20 +76,32 @@ image_has_digest() {
 pull_service_image() {
   local -n compose_command=$1
   local service="$2"
-  local exit_status
+  local attempt exit_status
 
   echo "Image pull started: $service."
-  if timeout --signal=TERM --kill-after=30s "${pull_timeout_seconds}s" \
-    env COMPOSE_PARALLEL_LIMIT=1 \
-    "${compose_command[@]}" --profile migration pull "$service"; then
-    echo "Image pull completed: $service."
-    return 0
-  else
-    exit_status=$?
-  fi
+  for (( attempt = 1; attempt <= pull_max_attempts; attempt++ )); do
+    echo "Image pull attempt ${attempt}/${pull_max_attempts}: $service."
+    if timeout --signal=TERM --kill-after=30s "${pull_timeout_seconds}s" \
+      env COMPOSE_PARALLEL_LIMIT=1 \
+      "${compose_command[@]}" --profile migration pull "$service"; then
+      echo "Image pull completed: $service on attempt $attempt."
+      return 0
+    else
+      exit_status=$?
+    fi
+
+    if (( attempt < pull_max_attempts )); then
+      if (( exit_status == 124 )); then
+        echo "Image pull attempt ${attempt}/${pull_max_attempts} timed out for $service; retrying." >&2
+      else
+        echo "Image pull attempt ${attempt}/${pull_max_attempts} exited with status $exit_status for $service; retrying." >&2
+      fi
+      sleep 5
+    fi
+  done
 
   if (( exit_status == 124 )); then
-    echo "Image pull failed: $service timed out after ${pull_timeout_seconds}s." >&2
+    echo "Image pull failed: $service timed out after ${pull_max_attempts} attempts of ${pull_timeout_seconds}s." >&2
   else
     echo "Image pull failed: $service exited with status $exit_status." >&2
   fi

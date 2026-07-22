@@ -40,13 +40,15 @@ assert.match(deployWorkflow, /git merge-base --is-ancestor "\$deploy_sha" origin
 assert.match(deployWorkflow, /No successful push-main CI run exists for deploy_sha/);
 
 assert.match(deployWorkflow, /deploy:\n(?:.|\n)*?timeout-minutes: 60/);
-assert.match(deployScript, /pull_timeout_seconds=900/);
+assert.match(deployScript, /pull_timeout_seconds=600/);
+assert.match(deployScript, /pull_max_attempts=3/);
 assert.match(deployScript, /migration_timeout_seconds=600/);
 assert.match(deployScript, /health_command_timeout_seconds=15/);
 assert.match(deployScript, /env COMPOSE_PARALLEL_LIMIT=1/);
 assert.match(deployScript, /for service in migrate api worker web; do\n\s+pull_service_image compose "\$service"/);
 assert.match(deployScript, /Image pull started: \$service/);
-assert.match(deployScript, /Image pull completed: \$service/);
+assert.match(deployScript, /Image pull attempt \$\{attempt\}\/\$\{pull_max_attempts\}: \$service/);
+assert.match(deployScript, /Image pull completed: \$service on attempt \$attempt/);
 assert.match(deployScript, /Image pull failed: \$service/);
 assert.match(deployScript, /run_migration compose/);
 assert.match(deployScript, /timeout --signal=TERM --kill-after=30s "\$\{migration_timeout_seconds\}s"/);
