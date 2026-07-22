@@ -138,7 +138,7 @@ jobs:
     name: Deploy exact production images
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: production
     env:
       DEPLOY_SHA: ${{ needs.validate.outputs.deploy_sha }}
