@@ -22,11 +22,14 @@ RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
 
 FROM dependencies AS build
 ARG API_ORIGIN=http://api:3001
+ARG APP_COMMIT_SHA=development
 ARG NODE_MAX_OLD_SPACE_SIZE=1536
 ENV API_ORIGIN=$API_ORIGIN
+ENV APP_COMMIT_SHA=$APP_COMMIT_SHA
 COPY . .
 RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
-    export NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" \
+    if [ "$APP_COMMIT_SHA" != "development" ] && ! printf '%s' "$APP_COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then exit 1; fi \
+    && export NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" \
     && pnpm db:generate \
     && pnpm --filter @hirescope/shared-types build \
     && pnpm --filter @hirescope/api build \
@@ -48,13 +51,19 @@ RUN --mount=type=cache,id=hirescope-pnpm-store,target=/pnpm/store \
     && node -e "if (!require('@prisma/client').TaskStatus) process.exit(1)"
 
 FROM build AS migrate
+ARG APP_COMMIT_SHA=development
 ENV NODE_ENV=production
+ENV APP_COMMIT_SHA=$APP_COMMIT_SHA
+LABEL org.opencontainers.image.revision=$APP_COMMIT_SHA
 CMD ["/workspace/node_modules/.bin/prisma", "migrate", "deploy"]
 
 FROM node:22-bookworm-slim AS api
+ARG APP_COMMIT_SHA=development
 ENV NODE_ENV=production
 ENV API_HOST=0.0.0.0
 ENV API_PORT=3001
+ENV APP_COMMIT_SHA=$APP_COMMIT_SHA
+LABEL org.opencontainers.image.revision=$APP_COMMIT_SHA
 WORKDIR /app
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends openssl \
@@ -67,7 +76,10 @@ EXPOSE 3001
 CMD ["node", "dist/main.js"]
 
 FROM node:22-bookworm-slim AS worker
+ARG APP_COMMIT_SHA=development
 ENV NODE_ENV=production
+ENV APP_COMMIT_SHA=$APP_COMMIT_SHA
+LABEL org.opencontainers.image.revision=$APP_COMMIT_SHA
 WORKDIR /app
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends openssl \
@@ -79,9 +91,12 @@ USER hirescope
 CMD ["node", "dist/main.js"]
 
 FROM node:22-bookworm-slim AS web
+ARG APP_COMMIT_SHA=development
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+ENV APP_COMMIT_SHA=$APP_COMMIT_SHA
+LABEL org.opencontainers.image.revision=$APP_COMMIT_SHA
 WORKDIR /app
 RUN groupadd --system --gid 1001 hirescope \
     && useradd --system --uid 1001 --gid hirescope --home-dir /app hirescope

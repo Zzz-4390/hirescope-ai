@@ -2,6 +2,7 @@ import { workerConfig } from './config';
 import { startWorkerRuntime } from './runtime';
 
 async function main(): Promise<void> {
+  console.info(`Worker starting commit_sha=${process.env.APP_COMMIT_SHA ?? 'development'}`);
   const config = workerConfig();
   const runtime = await startWorkerRuntime(config);
   const close = async () => { await runtime.close(); process.exit(0); };
