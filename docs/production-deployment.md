@@ -1,47 +1,104 @@
-# Production deployment contract
+# Production image publication and manual deployment
 
-Production deployment is image-based and immutable. The server does not build application images. A successful `push` CI run on `main` publishes four GHCR images, each tagged only with the full 40-character commit SHA used for deployment:
+Production deployment is image-based and immutable. GitHub Actions publishes images, but it does not connect to the production server or deploy them. An operator must SSH to the server and run the deployment script manually.
+
+## Image publication
+
+After `Full validation` succeeds for a push to `main`, the `publish-images` matrix builds `api`, `worker`, `web`, and `migrate`. Each matrix job builds its target once and pushes the same full 40-character commit SHA tag to both registries:
 
 ```text
-ghcr.io/<owner>/<repository>/api:<deploy_sha>
-ghcr.io/<owner>/<repository>/worker:<deploy_sha>
-ghcr.io/<owner>/<repository>/web:<deploy_sha>
-ghcr.io/<owner>/<repository>/migrate:<deploy_sha>
+<ACR_PUBLIC_REGISTRY>/<ACR_NAMESPACE>/api:<commit_sha>
+<ACR_PUBLIC_REGISTRY>/<ACR_NAMESPACE>/worker:<commit_sha>
+<ACR_PUBLIC_REGISTRY>/<ACR_NAMESPACE>/web:<commit_sha>
+<ACR_PUBLIC_REGISTRY>/<ACR_NAMESPACE>/migrate:<commit_sha>
+
+ghcr.io/<owner>/<repository>/api:<commit_sha>
+ghcr.io/<owner>/<repository>/worker:<commit_sha>
+ghcr.io/<owner>/<repository>/web:<commit_sha>
+ghcr.io/<owner>/<repository>/migrate:<commit_sha>
 ```
 
-The CI run records the registry digest for every image as an artifact and in the job summary. Every image receives `APP_COMMIT_SHA=<deploy_sha>` during its Docker build and the OCI label `org.opencontainers.image.revision=<deploy_sha>`. Production Compose accepts the exact references through `HIRESCOPE_API_IMAGE`, `HIRESCOPE_WORKER_IMAGE`, `HIRESCOPE_WEB_IMAGE`, and `HIRESCOPE_MIGRATE_IMAGE`; it never sets or overrides `APP_COMMIT_SHA`.
+ACR is the production source. GHCR is a backup and is not an automatic fallback. The workflow records both registry digests in artifacts and the job summary. Every image receives `APP_COMMIT_SHA=<commit_sha>` and the OCI label `org.opencontainers.image.revision=<commit_sha>`.
 
-## SHA selection
+The workflow uses these repository settings:
 
-Automatic deployment accepts only a successful `push` run of the repository's `CI` workflow whose `head_branch` is `main` and whose head repository is this repository. Before deployment, the SHA must still equal the current remote `main` tip. Re-running an older successful CI workflow therefore cannot deploy an older commit.
+- Variables: `ACR_PUBLIC_REGISTRY`, `ACR_NAMESPACE`
+- Secrets: `ACR_PUSH_USERNAME`, `ACR_PUSH_PASSWORD`
 
-Manual deployment requires `deploy_sha`. It must be a full commit SHA, be contained in `main`, have a successful `push` CI run on `main`, and have all four SHA-tagged images available in GHCR. A missing image or invalid registry digest blocks deployment before SSH configuration or production environment approval.
+`ACR_PUBLIC_REGISTRY` must be the exact public Registry domain shown by the Hangzhou ACR console, without `http://`, `https://`, or a namespace path. Do not derive or guess a VPC Registry domain.
 
-## Server commands
+## Automatic CD is disabled
 
-The deployment exports the four validated SHA-tagged image references and runs these state-changing Docker commands for the normal path:
+There is no production deployment workflow. A successful CI or image publication run never configures SSH, copies files to production, or invokes the server deployment script. The former `.github/workflows/deploy-production.yml` workflow has been removed.
+
+## One-time server setup
+
+Prepare the deployment files locally from the reviewed commit, then copy them to a temporary server directory:
 
 ```bash
-docker login ghcr.io --username <github-actor> --password-stdin
-docker compose --env-file /opt/hirescope/.env.production -f <sha-compose-file> --profile migration pull migrate api worker web
-docker compose --env-file /opt/hirescope/.env.production -f <sha-compose-file> --profile migration run --rm migrate
-docker compose --env-file /opt/hirescope/.env.production -f <sha-compose-file> up -d --force-recreate api worker web
+scp docker-compose.prod.yml .env.deploy.example .github/scripts/deploy-production.sh production:/tmp/
 ```
 
-There is no unscoped `pull` or `up --force-recreate`. PostgreSQL, Redis, and `storage-init` retain their existing Compose definitions and are never selected for forced recreation. The deployment does not use `docker compose build`.
+After SSH login, install the files and create the deployment configuration. Keep the existing real `.env.production`; create it from `.env.production.example` only for a new server.
 
-## Version verification
+```bash
+sudo install -d -m 700 /opt/hirescope/.deploy
+sudo install -m 600 /tmp/docker-compose.prod.yml /opt/hirescope/docker-compose.prod.yml
+sudo install -m 700 /tmp/deploy-production.sh /opt/hirescope/.deploy/deploy-production.sh
+sudo install -m 600 /tmp/.env.deploy.example /opt/hirescope/.env.deploy
+sudoedit /opt/hirescope/.env.deploy
+```
 
-Before the migration runs, the server confirms the pulled `api`, `worker`, `web`, and `migrate` registry digests. After the application containers start, it verifies that the running API, Worker, and Web image IDs use those pulled images, their OCI revisions equal `deploy_sha`, and their container `APP_COMMIT_SHA` values equal `deploy_sha`.
+Set only the exact public Registry domain and namespace in `/opt/hirescope/.env.deploy`:
 
-The API exposes `GET /api/v1/version`; Web exposes `GET /_version` with both `commitSha` and the Next build ID. Web also adds `X-App-Commit-Sha` and `X-Next-Build-Id` response headers. Both version endpoints use `Cache-Control: no-store`; normal Next.js static resource caching remains unchanged. Internal and public checks add a unique query string and `Cache-Control: no-cache` request header. Worker startup logs include `Worker starting commit_sha=<deploy_sha>`.
+```dotenv
+ACR_PUBLIC_REGISTRY=<exact-public-registry-domain-from-the-ACR-console>
+ACR_NAMESPACE=hirescope-ai
+```
 
-The deployment fails unless internal API/Web responses, Worker identity, and the public production Web and API endpoints all return the exact `deploy_sha`.
+Log in to that exact ACR domain once with a production pull credential. Prefer a least-privilege pull-only account if the ACR edition supports one:
 
-## Rollback and migrations
+```bash
+ACR_PUBLIC_REGISTRY="$(sudo sed -n 's/^ACR_PUBLIC_REGISTRY=//p' /opt/hirescope/.env.deploy)"
+read -rsp 'ACR password: ' ACR_PULL_PASSWORD; echo
+printf '%s' "$ACR_PULL_PASSWORD" | sudo docker login "$ACR_PUBLIC_REGISTRY" \
+  --username '<ACR-pull-username>' --password-stdin
+unset ACR_PULL_PASSWORD
+```
 
-After external verification succeeds, `/opt/hirescope/.deploy/current-success.env` records the successful SHA, four exact image references, four registry digests, and its Compose file. The former current record is preserved as `previous-success.env` for audit history.
+The deployment user needs permission to run Docker. The server must provide Bash, Docker Compose, `curl`, `flock`, `sed`, `grep`, and GNU `timeout`.
 
-If new application containers or external version checks fail, automatic rollback pulls and recreates only `api`, `worker`, and `web` from the last successful immutable deployment. It never recreates PostgreSQL or Redis and never runs a down migration. During the first immutable deployment, before migration, the script captures the currently running application image IDs, the locally available migrate image ID, and the server checkout SHA as a one-time rollback baseline. This lets the first transition restore only the old application containers even though the legacy images were not published to GHCR.
+## Manual deployment
 
-Database migrations must follow the expand/contract pattern: deploy backward-compatible additive changes first, migrate data safely, switch application readers/writers later, and remove old schema only in a subsequent deployment. Because migrations are not automatically reversed, an application rollback must remain compatible with the migrated database.
+Use the full commit SHA from a successful `main` image publication run:
+
+```bash
+sudo /opt/hirescope/.deploy/deploy-production.sh deploy <full-40-character-commit-sha>
+```
+
+The script performs this order:
+
+1. Read the exact public ACR Registry and namespace from `/opt/hirescope/.env.deploy`.
+2. Pull `migrate`, `api`, `worker`, and `web` from ACR by the full SHA tag.
+3. Record their registry digests and verify every OCI revision equals the requested SHA.
+4. Run the `migrate` image and wait for a successful exit.
+5. Only after migration succeeds, force-recreate `api`, `worker`, and `web` with `--no-deps`.
+6. Verify service health, running image IDs, runtime `APP_COMMIT_SHA`, API/Web version endpoints, and the Worker startup SHA log.
+7. Record the successful SHA, image references, digests, and Compose snapshot.
+
+The script never runs `docker build`, `docker compose build`, `pnpm build`, or `pnpm deploy`. It never force-recreates PostgreSQL, Redis, or `storage-init`.
+
+If the new application containers fail after migration, the script attempts an application-only rollback to the last successful state. It never rolls back a migration. Migrations must therefore remain backward-compatible using the expand/contract pattern.
+
+An explicit application rollback is available when the recorded images remain locally available or the server is authenticated to their registry:
+
+```bash
+sudo /opt/hirescope/.deploy/deploy-production.sh rollback
+```
+
+After deployment, verify the public no-cache endpoints from an operator machine:
+
+```bash
+curl -fsS -H 'Cache-Control: no-cache' "https://<production-origin>/_version?deploy_sha=<commit_sha>"
+curl -fsS -H 'Cache-Control: no-cache' "https://<production-origin>/api/v1/version?deploy_sha=<commit_sha>"
+```

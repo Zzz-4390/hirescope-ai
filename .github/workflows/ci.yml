@@ -204,13 +204,25 @@ jobs:
       - name: Checkout validated commit
         uses: actions/checkout@v7
 
-      - name: Resolve immutable image reference
+      - name: Resolve immutable image references
         id: image
         shell: bash
+        env:
+          ACR_PUBLIC_REGISTRY: ${{ vars.ACR_PUBLIC_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
         run: |
           set -Eeuo pipefail
           repository="${GITHUB_REPOSITORY,,}"
-          printf 'name=ghcr.io/%s/%s\n' "$repository" "${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+          [[ "$ACR_PUBLIC_REGISTRY" =~ ^[a-z0-9.-]+(:[0-9]+)?$ ]] || {
+            echo "ACR_PUBLIC_REGISTRY must be the exact public Registry domain without a scheme or path." >&2
+            exit 1
+          }
+          [[ "$ACR_NAMESPACE" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || {
+            echo "ACR_NAMESPACE is invalid." >&2
+            exit 1
+          }
+          printf 'ghcr=ghcr.io/%s/%s\n' "$repository" "${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+          printf 'acr=%s/%s/%s\n' "$ACR_PUBLIC_REGISTRY" "$ACR_NAMESPACE" "${{ matrix.target }}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -219,10 +231,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Hangzhou ACR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.ACR_PUBLIC_REGISTRY }}
+          username: ${{ secrets.ACR_PUSH_USERNAME }}
+          password: ${{ secrets.ACR_PUSH_PASSWORD }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and push immutable image
+      - name: Build once and push immutable image to ACR and GHCR
         id: build
         uses: docker/build-push-action@v7
         with:
@@ -230,7 +249,9 @@ jobs:
           file: docker/Dockerfile
           target: ${{ matrix.target }}
           push: true
-          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          tags: |
+            ${{ steps.image.outputs.acr }}:${{ github.sha }}
+            ${{ steps.image.outputs.ghcr }}:${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
             APP_COMMIT_SHA=${{ github.sha }}
@@ -242,15 +263,24 @@ jobs:
       - name: Record image digest
         shell: bash
         env:
-          IMAGE_NAME: ${{ steps.image.outputs.name }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          ACR_IMAGE: ${{ steps.image.outputs.acr }}
+          GHCR_IMAGE: ${{ steps.image.outputs.ghcr }}
           IMAGE_TARGET: ${{ matrix.target }}
         run: |
           set -Eeuo pipefail
-          test -n "$IMAGE_DIGEST"
-          printf '%s=%s@%s\n' "$IMAGE_TARGET" "$IMAGE_NAME" "$IMAGE_DIGEST" | tee "${IMAGE_TARGET}-digest.txt"
-          printf '### %s image\n\n- Reference: `%s:%s`\n- Digest: `%s`\n' \
-            "$IMAGE_TARGET" "$IMAGE_NAME" "$GITHUB_SHA" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          acr_manifest="$(docker buildx imagetools inspect "$ACR_IMAGE:$GITHUB_SHA" --format '{{json .Manifest}}')"
+          ghcr_manifest="$(docker buildx imagetools inspect "$GHCR_IMAGE:$GITHUB_SHA" --format '{{json .Manifest}}')"
+          acr_digest="$(jq -er '.digest // .Digest' <<< "$acr_manifest")"
+          ghcr_digest="$(jq -er '.digest // .Digest' <<< "$ghcr_manifest")"
+          [[ "$acr_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$ghcr_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          {
+            printf '%s_acr=%s@%s\n' "$IMAGE_TARGET" "$ACR_IMAGE" "$acr_digest"
+            printf '%s_ghcr=%s@%s\n' "$IMAGE_TARGET" "$GHCR_IMAGE" "$ghcr_digest"
+          } | tee "${IMAGE_TARGET}-digest.txt"
+          printf '### %s image\n\n- Production ACR: `%s:%s@%s`\n- Backup GHCR: `%s:%s@%s`\n' \
+            "$IMAGE_TARGET" "$ACR_IMAGE" "$GITHUB_SHA" "$acr_digest" \
+            "$GHCR_IMAGE" "$GITHUB_SHA" "$ghcr_digest" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload image digest record
         uses: actions/upload-artifact@v7
@@ -260,7 +290,7 @@ jobs:
           retention-days: 90
 
   record-image-digests:
-    name: Record production image digests
+    name: Record ACR and GHCR image digests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: publish-images
     runs-on: ubuntu-latest
@@ -276,14 +306,21 @@ jobs:
 
       - name: Validate and summarize all image digests
         shell: bash
+        env:
+          ACR_PUBLIC_REGISTRY: ${{ vars.ACR_PUBLIC_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
         run: |
           set -Eeuo pipefail
-          printf '# Production image digests for `%s`\n\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          repository="${GITHUB_REPOSITORY,,}"
+          printf '# ACR production and GHCR backup image digests for `%s`\n\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           for service in api worker web migrate; do
             record="image-digests/${service}-digest.txt"
             test -s "$record"
-            grep -Eq "^${service}=ghcr\.io/.+/${service}@sha256:[0-9a-f]{64}$" "$record"
-            printf -- '- `%s`\n' "$(cat "$record")" >> "$GITHUB_STEP_SUMMARY"
+            grep -Eq "^${service}_acr=${ACR_PUBLIC_REGISTRY}/${ACR_NAMESPACE}/${service}@sha256:[0-9a-f]{64}$" "$record"
+            grep -Eq "^${service}_ghcr=ghcr\.io/${repository}/${service}@sha256:[0-9a-f]{64}$" "$record"
+            while IFS= read -r digest_record; do
+              printf -- '- `%s`\n' "$digest_record" >> "$GITHUB_STEP_SUMMARY"
+            done < "$record"
           done
 
       - name: Upload combined digest record
