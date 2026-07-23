@@ -38,6 +38,16 @@ describe('CodeReviewProcessor', () => {
     const { processor, reviewer, tx } = setup(); reviewer.review.mockRejectedValue(new CodeReviewGenerationError('AI_RATE_LIMITED', 429)); await processor.process('task');
     expect(tx.codeReview.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.FAILED, failureCode: 'AI_RATE_LIMITED', result: Prisma.DbNull }) }));
   });
+  it('cancels instead of writing a failure when deletion starts during generation', async () => {
+    const { processor, reviewer, tx } = setup();
+    reviewer.review.mockRejectedValue(new CodeReviewGenerationError('AI_RATE_LIMITED', 429));
+    tx.$queryRaw
+      .mockResolvedValueOnce([{ reviewStatus: TaskStatus.QUEUED, projectStatus: ProjectStatus.COMPLETED }])
+      .mockResolvedValueOnce([{ reviewStatus: TaskStatus.PROCESSING, projectStatus: ProjectStatus.DELETING }]);
+    await processor.process('task');
+    expect(tx.codeReview.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.CANCELLED, failureCode: 'RESOURCE_DELETING', result: Prisma.DbNull }) }));
+    expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.CANCELLED, failureCode: 'RESOURCE_DELETING' }) }));
+  });
   it('builds and passes the controlled evidence context from the extracted project', async () => {
     const value = task(); value.project.extractStoragePath = 'projects/user/project/extracted';
     const evidence = { evidencePaths: ['src/main.ts'] };
