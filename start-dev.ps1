@@ -268,8 +268,67 @@ function Stop-StartedProcesses {
 }
 
 function Test-DockerReady {
-    & $script:DockerPath info *> $null
-    return $LASTEXITCODE -eq 0
+    try {
+        & $script:DockerPath info *> $null
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        # Windows PowerShell can promote Docker's stderr to a terminating error
+        # when the Desktop engine is stopped. Treat that as "not ready" so the
+        # caller can start Docker Desktop and wait for the engine.
+        return $false
+    }
+}
+
+function Get-ComposeRedisPort {
+    try {
+        $containerId = (& $script:DockerPath compose ps -q redis 2>$null | Select-Object -First 1)
+        if ([string]::IsNullOrWhiteSpace($containerId)) {
+            return $null
+        }
+
+        $publishedPort = (& $script:DockerPath compose port redis 6379 2>$null | Select-Object -First 1)
+        if ($publishedPort -notmatch ':(\d+)\s*$') {
+            return $null
+        }
+
+        return [int]$Matches[1]
+    }
+    catch {
+        return $null
+    }
+}
+
+function ConvertTo-RedisUriBuilder {
+    param([string]$Value)
+
+    $parsedUri = $null
+    if (
+        -not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsedUri) -or
+        $parsedUri.Scheme -notin @('redis', 'rediss') -or
+        [string]::IsNullOrWhiteSpace($parsedUri.Host) -or
+        $parsedUri.Port -lt 1 -or
+        $parsedUri.Port -gt 65535
+    ) {
+        throw 'Invalid REDIS_URL in .env.'
+    }
+
+    return [UriBuilder]::new($parsedUri)
+}
+
+function Resolve-RedisPort {
+    param([int]$RequestedPort)
+
+    $composeRedisPort = Get-ComposeRedisPort
+    $candidatePorts = @($RequestedPort) + @(6479..6489 | Where-Object { $_ -ne $RequestedPort })
+
+    foreach ($candidate in $candidatePorts) {
+        if ($candidate -eq $composeRedisPort -or (Test-PortCanBind -Port $candidate)) {
+            return $candidate
+        }
+    }
+
+    throw "Redis port $RequestedPort is unavailable and no fallback port from 6479 through 6489 can be used."
 }
 
 function Wait-DockerReady {
@@ -375,6 +434,7 @@ try {
 
     $apiHost = Get-DotEnvValue -Path $envPath -Name 'API_HOST' -DefaultValue '127.0.0.1'
     $apiPortText = Get-DotEnvValue -Path $envPath -Name 'API_PORT' -DefaultValue '4201'
+    $redisUrlText = Get-DotEnvValue -Path $envPath -Name 'REDIS_URL' -DefaultValue 'redis://localhost:6379'
     $nodeEnvironment = Get-DotEnvValue -Path $envPath -Name 'NODE_ENV' -DefaultValue 'development'
     $authCookieSecure = Get-DotEnvValue -Path $envPath -Name 'AUTH_COOKIE_SECURE' -DefaultValue '__MISSING__'
     if ($authCookieSecure -eq '__MISSING__' -and -not (Test-Path Env:AUTH_COOKIE_SECURE)) {
@@ -392,13 +452,7 @@ try {
         throw "Invalid API_PORT in .env: $apiPortText"
     }
 
-    $webPortResolution = Resolve-WebPort -RequestedPort $WebPort
-    if ($webPortResolution.Port -ne $WebPort) {
-        Write-Host "Web port $WebPort is occupied by another process; using $($webPortResolution.Port) instead." -ForegroundColor Yellow
-        $WebPort = $webPortResolution.Port
-    }
-    $reuseExistingWeb = $webPortResolution.Reuse
-    $env:CORS_ALLOWED_ORIGINS = "http://localhost:$WebPort,http://127.0.0.1:$WebPort"
+    $redisUri = ConvertTo-RedisUriBuilder -Value $redisUrlText
 
     if (-not $SkipInstall -and (-not (Test-Path 'node_modules') -or -not (Test-Path 'node_modules\.modules.yaml'))) {
         Write-Step 'Installing workspace dependencies'
@@ -407,8 +461,30 @@ try {
 
     Write-Step 'Checking Docker and starting PostgreSQL/Redis'
     Wait-DockerReady -TimeoutSeconds $DockerTimeoutSeconds
+
+    $requestedRedisPort = $redisUri.Port
+    $redisPort = Resolve-RedisPort -RequestedPort $requestedRedisPort
+    $redisUri.Port = $redisPort
+    $env:REDIS_PORT = "$redisPort"
+    $env:REDIS_URL = $redisUri.Uri.AbsoluteUri
+    if ($redisPort -ne $requestedRedisPort) {
+        Write-Host "Redis port $requestedRedisPort is unavailable; using $redisPort for this run instead." -ForegroundColor Yellow
+    }
+
     Invoke-NativeCommand -FilePath $script:PnpmPath -CommandArguments @('infra:up') -Description 'Infrastructure startup'
     Wait-ComposeHealth
+    Wait-TcpPort -Name 'PostgreSQL' -HostName '127.0.0.1' -Port 5432 -TimeoutSeconds 30
+    Wait-TcpPort -Name 'Redis' -HostName '127.0.0.1' -Port $redisPort -TimeoutSeconds 30
+
+    # Docker Desktop can restore other containers after the engine first reports
+    # ready, so resolve the Web port only after infrastructure startup settles.
+    $webPortResolution = Resolve-WebPort -RequestedPort $WebPort
+    if ($webPortResolution.Port -ne $WebPort) {
+        Write-Host "Web port $WebPort is occupied by another process; using $($webPortResolution.Port) instead." -ForegroundColor Yellow
+        $WebPort = $webPortResolution.Port
+    }
+    $reuseExistingWeb = $webPortResolution.Reuse
+    $env:CORS_ALLOWED_ORIGINS = "http://localhost:$WebPort,http://127.0.0.1:$WebPort"
 
     $apiAlreadyRunning = Test-TcpPort -HostName $apiHost -Port $apiPort
     $workerProcesses = Get-WorkerProcesses
