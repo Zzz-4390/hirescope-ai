@@ -86,6 +86,7 @@ describe('InterviewQuestionProcessor', () => {
     expect(generator.generate).not.toHaveBeenCalled();
     expect(tx.interviewQuestion.createMany).not.toHaveBeenCalled();
     expect(tx.asyncTask.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.CANCELLED }) }));
+    expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.FAILED, failureCode: 'RESOURCE_DELETING' }) }));
   });
 
   it('rejects non-completed projects before generation', async () => {
@@ -101,6 +102,18 @@ describe('InterviewQuestionProcessor', () => {
     await processor.process('task');
     expect(tx.interviewQuestion.createMany).not.toHaveBeenCalled();
     expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.FAILED, failureCode: 'AI_UPSTREAM_ERROR' }) }));
+  });
+
+  it('cancels the task and interview when deletion starts during generation', async () => {
+    const { processor, generator, tx } = setup();
+    generator.generate.mockRejectedValue(new InterviewQuestionGenerationError('AI_UPSTREAM_ERROR'));
+    tx.$queryRaw
+      .mockResolvedValueOnce([{ interviewStatus: InterviewStatus.GENERATING, projectStatus: ProjectStatus.COMPLETED }])
+      .mockResolvedValueOnce([{ interviewStatus: InterviewStatus.GENERATING, projectStatus: ProjectStatus.DELETING }]);
+    await processor.process('task');
+    expect(tx.interviewQuestion.createMany).not.toHaveBeenCalled();
+    expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.FAILED, failureCode: 'RESOURCE_DELETING' }) }));
+    expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.CANCELLED, failureCode: 'RESOURCE_DELETING' }) }));
   });
 
   it('does not write questions twice when a completed job is delivered again', async () => {
@@ -138,7 +151,7 @@ function setup(value: any = task(), generated: any = VALID) {
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ interviewStatus: value.interview.status, projectStatus: value.project.status }]),
     asyncTask: { update: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-    interview: { update: vi.fn() },
+    interview: { update: vi.fn(), updateMany: vi.fn() },
     interviewQuestion: { createMany: vi.fn() },
   };
   const prisma = { asyncTask: { findUnique: vi.fn().mockResolvedValue(value) }, $transaction: vi.fn((callback) => callback(tx)) };

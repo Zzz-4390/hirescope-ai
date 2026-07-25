@@ -54,12 +54,33 @@ describe('InterviewReportProcessor', () => {
     expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ failureCode: 'INTERVIEW_REPORT_RESULT_INVALID' }) }));
   });
 
+  it('moves unexpected generator failures to terminal database state', async () => {
+    const { processor, generator, tx } = setup();
+    generator.generate.mockRejectedValue(new Error('unexpected generator failure'));
+    await processor.process('task');
+    expect(tx.interviewReport.create).not.toHaveBeenCalled();
+    expect(tx.interview.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.FAILED, failureCode: 'INTERVIEW_REPORT_GENERATION_FAILED' }) }));
+    expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.FAILED, failureCode: 'INTERVIEW_REPORT_GENERATION_FAILED' }) }));
+  });
+
   it('cancels a deleting project without writing or completing the interview', async () => {
     const { processor, tx } = setup(task(TaskStatus.QUEUED, ProjectStatus.DELETING));
     await processor.process('task');
     expect(tx.interviewReport.create).not.toHaveBeenCalled();
     expect(tx.interview.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.COMPLETED }) }));
     expect(tx.asyncTask.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.CANCELLED, failureCode: 'RESOURCE_DELETING' }) }));
+    expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.FAILED, failureCode: 'RESOURCE_DELETING' }) }));
+  });
+
+  it('cancels instead of writing a failure when deletion starts during generation', async () => {
+    const { processor, tx } = setup(task(), { overallScore: 101 });
+    tx.$queryRaw
+      .mockResolvedValueOnce([{ taskStatus: TaskStatus.QUEUED, interviewStatus: InterviewStatus.REPORT_GENERATING, projectStatus: ProjectStatus.COMPLETED }])
+      .mockResolvedValueOnce([{ taskStatus: TaskStatus.PROCESSING, interviewStatus: InterviewStatus.REPORT_GENERATING, projectStatus: ProjectStatus.DELETING }]);
+    await processor.process('task');
+    expect(tx.interviewReport.create).not.toHaveBeenCalled();
+    expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: InterviewStatus.FAILED, failureCode: 'RESOURCE_DELETING' }) }));
+    expect(tx.asyncTask.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: TaskStatus.CANCELLED, failureCode: 'RESOURCE_DELETING' }) }));
   });
 });
 
@@ -67,7 +88,7 @@ function setup(value = task(), generated: any = validReport()) {
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ taskStatus: value.status, interviewStatus: value.interview.status, projectStatus: value.project.status }]),
     asyncTask: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn().mockResolvedValue({}) },
-    interview: { update: vi.fn().mockResolvedValue({}) },
+    interview: { update: vi.fn().mockResolvedValue({}), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     interviewReport: { findUnique: vi.fn().mockResolvedValue(value.interview.report), create: vi.fn().mockResolvedValue({}) },
   };
   const prisma = { asyncTask: { findUnique: vi.fn().mockResolvedValue(value) }, $transaction: vi.fn((callback) => callback(tx)) };

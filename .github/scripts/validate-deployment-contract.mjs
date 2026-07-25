@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 const read = (path) => readFileSync(path, "utf8");
 const ci = read(".github/workflows/ci.yml");
 const deploymentWorkflow = read(".github/workflows/deploy-production.yml");
+const runtimeClassifier = read(".github/scripts/detect-production-runtime-changes.mjs");
 const deployScript = read(".github/scripts/deploy-production.sh");
 const compose = read("docker-compose.prod.yml");
 const dockerfile = read("docker/Dockerfile");
@@ -31,7 +32,16 @@ for (const service of ["api", "worker", "web", "migrate"]) {
 }
 
 assert.equal(existsSync(".github/workflows/deploy-production.yml"), true);
+assert.match(ci, /on:\n\s+pull_request:\n\s+push:\n\s+branches:\n\s+- main/);
+assert.match(ci, /full-validation:\n\s+name: Full validation/);
 assert.match(ci, /target: \[api, worker, web, migrate\]/);
+assert.match(ci, /runtime-changes:\n\s+name: Detect production runtime changes/);
+assert.match(ci, /node \.github\/scripts\/detect-production-runtime-changes\.mjs/);
+assert.match(ci, /node --test \.github\/scripts\/detect-production-runtime-changes\.test\.mjs/);
+assert.match(
+  ci,
+  /needs\.runtime-changes\.outputs\.runtime_changed == 'true'[\s\S]*needs: \[runtime-changes, full-validation\]/,
+);
 assert.match(ci, /registry: \$\{\{ vars\.ACR_PUBLIC_REGISTRY \}\}/);
 assert.match(ci, /username: \$\{\{ secrets\.ACR_PUSH_USERNAME \}\}/);
 assert.match(ci, /password: \$\{\{ secrets\.ACR_PUSH_PASSWORD \}\}/);
@@ -43,22 +53,20 @@ assert.match(ci, /labels: org\.opencontainers\.image\.revision=\$\{\{ github\.sh
 assert.match(ci, /Production ACR:/);
 assert.match(ci, /Backup GHCR:/);
 
-assert.match(deploymentWorkflow, /workflow_run:\n\s+workflows: \["CI"\]/);
-assert.match(deploymentWorkflow, /types: \[completed\]\n\s+branches: \[main\]/);
+assert.match(deploymentWorkflow, /push:\n\s+branches: \[main\]\n\s+paths-ignore:/);
 assert.match(deploymentWorkflow, /workflow_dispatch:\n\s+inputs:\n\s+deploy_sha:/);
-assert.match(deploymentWorkflow, /github\.event\.workflow_run\.conclusion == 'success'/);
-assert.match(deploymentWorkflow, /github\.event\.workflow_run\.event == 'push'/);
-assert.match(deploymentWorkflow, /github\.event\.workflow_run\.head_branch == 'main'/);
-assert.match(
-  deploymentWorkflow,
-  /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
-);
+assert.doesNotMatch(deploymentWorkflow, /workflow_run:/);
+assert.doesNotMatch(deploymentWorkflow, /workflow_call:/);
+assert.match(deploymentWorkflow, /\[\[ "\$EVENT_NAME" == push \]\]/);
+assert.match(deploymentWorkflow, /\[\[ "\$GITHUB_REF" == refs\/heads\/main \]\]/);
+assert.match(deploymentWorkflow, /deploy_sha="\$\{GITHUB_SHA,,\}"/);
+assert.match(deploymentWorkflow, /main advanced while waiting for CI/);
+assert.match(deploymentWorkflow, /sleep 15/);
 assert.match(deploymentWorkflow, /\^\[0-9a-f\]\{40\}\$/);
 assert.match(deploymentWorkflow, /git merge-base --is-ancestor "\$deploy_sha" origin\/main/);
 assert.match(deploymentWorkflow, /actions\/workflows\/ci\.yml\/runs/);
 assert.match(deploymentWorkflow, /-f head_sha="\$deploy_sha"/);
 assert.match(deploymentWorkflow, /-f status=success/);
-assert.match(deploymentWorkflow, /ci_run_id="\$RUN_ID"/);
 assert.match(deploymentWorkflow, /production-image-digests-\$DEPLOY_SHA/);
 assert.match(deploymentWorkflow, /gh run download "\$CI_RUN_ID"/);
 assert.match(deploymentWorkflow, /for service in api worker web migrate; do/);
@@ -108,6 +116,26 @@ assert.doesNotMatch(
   /docker (?:compose )?build(?:\s|$)|pnpm (?:build|deploy)/m,
 );
 
+for (const localOnlyPath of [
+  ".env.example",
+  "docker-compose.yml",
+  "start-dev.cmd",
+  "start-dev.ps1",
+  "stop-dev.cmd",
+  "stop-dev.ps1",
+]) {
+  assert.match(runtimeClassifier, new RegExp(`"${localOnlyPath.replaceAll(".", "\\.")}"`));
+  assert.match(
+    deploymentWorkflow,
+    new RegExp(`- "${localOnlyPath.replaceAll(".", "\\.")}"`),
+  );
+}
+assert.match(runtimeClassifier, /lowerPath\.endsWith\("\.md"\)/);
+assert.match(runtimeClassifier, /lowerPath\.startsWith\("docs\/"\)/);
+assert.match(deploymentWorkflow, /- "\*\*\/\*\.md"/);
+assert.match(deploymentWorkflow, /- "docs\/\*\*"/);
+assert.match(runtimeClassifier, /return true;\n}\n\nexport function classifyProductionRuntimeChanges/);
+
 assert.doesNotMatch(compose, /APP_COMMIT_SHA/);
 assert.doesNotMatch(compose, /^\s+build:/m);
 assert.match(compose, /postgres:\n    image: postgres:16-alpine/);
@@ -135,7 +163,7 @@ assert.doesNotMatch(deployScript, /docker build|pnpm (?:build|deploy)/);
 assert.doesNotMatch(deployScript, /up[^\n]*force-recreate[^\n]*(?:postgres|redis|storage-init)/);
 assert.match(documentation, /ACR is the production source\. GHCR is a backup/);
 assert.match(documentation, /deploy-production\.sh deploy <full-40-character-commit-sha>/);
-assert.match(documentation, /successful same-repository push to `main`/);
+assert.match(documentation, /runtime-changing push to `main`/);
 assert.match(documentation, /Production environment/);
 assert.match(documentation, /does not upload or overwrite/);
 

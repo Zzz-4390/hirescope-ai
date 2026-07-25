@@ -1,70 +1,84 @@
 # HireScope AI
 
-HireScope AI 是面向开发者的 AI 项目审查与模拟面试平台。当前仓库实现 User 端 MVP：用户上传 ZIP 项目后，系统异步完成项目分析、代码审查、面试题生成与面试报告评分，并在 Web 工作台展示全过程结果。
+## 项目简介
+
+HireScope AI 是一个面向开发者的 AI 项目代码审查与模拟面试平台。当前仓库实现 User 端 PC MVP：用户上传 ZIP 项目后，系统异步完成项目分析、代码审查、面试题生成与面试报告评分，并通过 Web 工作台展示任务状态和结构化结果。
+
+项目采用 pnpm Monorepo，将界面、业务 API、异步 Worker、共享契约和数据层分离，重点解决长耗时 AI 任务的可靠调度、结果校验与失败恢复。
 
 ## 核心功能
 
-- 注册、登录、刷新会话与退出登录
-- ZIP 项目上传、格式/大小/路径安全校验与项目归属校验
-- 技术栈、目录结构、入口文件和核心模块分析
-- 基于真实项目文件证据的 AI 代码审查
-- 基于项目与审查结果的 AI 模拟面试、逐题作答和自动保存
-- 结构化面试评分、能力维度汇总、改进建议与报告重试
-- 异步任务状态查询、失败信息记录、恢复与幂等处理
-- AI 调用日志记录，避免记录密钥和完整源码
-
-## 架构
-
-```mermaid
-flowchart LR
-  Browser[浏览器] --> Web[Next.js Web]
-  Web --> API[NestJS API]
-  API --> PostgreSQL[(PostgreSQL)]
-  API --> Redis[(Redis / BullMQ)]
-  API --> Storage[(共享项目存储)]
-  API --> OSS[(Aliyun OSS 私有头像存储)]
-  Redis --> Worker[TypeScript Worker]
-  Worker --> PostgreSQL
-  Worker --> Storage
-  Worker --> DeepSeek[DeepSeek API]
-```
-
-生产 Compose 仅对宿主机发布 Web 端口。Web 通过内部 `API_ORIGIN` 转发 `/api/*`；API、Worker、PostgreSQL 和 Redis 只在 Compose 网络中通信。API 与 Worker 以同一 UID 访问共享 `storage_data` 卷，上传文件不会写入容器临时层。
+- 用户注册、登录、会话刷新、退出登录、密码修改与头像管理
+- ZIP 项目上传，以及文件类型、大小、解压路径和资源归属校验
+- 技术栈、目录结构、入口文件、核心模块和项目统计分析
+- 基于真实项目文件证据的 AI 代码审查与结构化评分
+- 基于项目和审查结果的模拟面试、逐题作答与答案自动保存
+- 面试报告生成、能力维度汇总、逐题反馈和失败重试
+- 异步任务状态查询、失败信息记录、任务恢复与项目异步删除
 
 ## 技术栈
 
 | 层 | 技术 |
 | --- | --- |
-| Web | Next.js 16、React 19、TypeScript |
+| 运行时与 Monorepo | Node.js 22、pnpm 11.7.0、TypeScript 5.9 |
+| Web | Next.js 16、React 19 |
 | API | NestJS 11、Prisma 6、Passport/JWT、Argon2 |
-| Worker | Node.js 22、TypeScript、BullMQ |
-| 数据与队列 | PostgreSQL 16、Redis 7 |
-| 对象存储 | Aliyun OSS 私有 Bucket、短期签名 URL |
-| AI | DeepSeek OpenAI-compatible API、结构化 JSON 校验、确定性回退 |
-| 测试 | Vitest、Supertest、Playwright、真实 PostgreSQL/Redis 集成测试 |
-| 工程化 | pnpm workspace、Docker Compose、GitHub Actions |
+| Worker | BullMQ 5、ioredis、TypeScript |
+| 数据 | PostgreSQL 16、Redis 7 |
+| AI | DeepSeek OpenAI-compatible API、Zod / Shared Schema |
+| 存储 | 共享项目文件存储、Aliyun OSS 私有头像存储 |
+| 测试 | Vitest、Supertest、Playwright、PostgreSQL/Redis 集成测试 |
+| 工程化 | Docker Compose、GitHub Actions |
 
-## 异步任务可靠性
+## 系统架构
 
-API 先持久化业务对象和 `async_tasks`，成功入队后再推进队列状态。Worker 对项目分析、项目清理、代码审查、面试题和面试报告任务执行幂等状态迁移，并在启动及固定间隔扫描以下异常任务：
+```mermaid
+flowchart LR
+  Browser[浏览器] --> Web[Next.js Web]
+  Web -->|/api 转发| API[NestJS API]
+  API -->|业务数据与 AsyncTask| PostgreSQL[(PostgreSQL)]
+  API -->|Session / BullMQ| Redis[(Redis)]
+  API -->|ZIP 项目| Storage[(共享项目存储)]
+  API -->|用户头像| OSS[(Aliyun OSS)]
+  Redis --> Worker[BullMQ Worker]
+  Worker --> PostgreSQL
+  Worker --> Storage
+  Worker --> DeepSeek[DeepSeek API]
+```
 
-- 长时间停留在 `PENDING` 的任务重新入队；
-- 超过阈值的 `QUEUED` 或 `PROCESSING` 任务按恢复次数重新调度；
-- 达到 `TASK_RECOVERY_MAX_ATTEMPTS` 后写入稳定失败状态，避免无限重试；
-- Redis 入队失败时保留可恢复状态，不把未入队任务误报为已排队；
-- Worker 收到 `SIGTERM`/`SIGINT` 后关闭 BullMQ、Prisma 与定时恢复任务。
+Web 负责页面与 API 转发，NestJS API 负责认证、权限、业务事务和任务入队；Worker 执行项目分析、代码审查、面试题、报告与文件清理等长任务。PostgreSQL 保存业务事实和任务状态，Redis 承载 Session、认证限流与 BullMQ。
 
-生产环境可通过 `TASK_RECOVERY_*` 调整扫描间隔、批量大小、超时和最大恢复次数。扩容 Worker 前需确认任务处理器的幂等边界，并持续观察数据库任务积压和 BullMQ 失败事件。
+## 技术亮点
 
-## AI 审查与面试评分
+- **异步任务架构**：NestJS API 将长耗时工作交给 BullMQ，独立 Worker 消费项目分析、代码审查、面试题、报告和清理任务，避免阻塞请求链路。
+- **清晰的数据职责**：PostgreSQL 是项目、审查、面试、报告和任务状态的业务事实源；Redis 用于 Session、认证限流和 BullMQ 的队列状态，不替代业务持久化。
+- **任务可靠性**：API 先持久化业务对象和 `AsyncTask`，再发布队列消息；以 `taskId` 作为固定 `jobId`，结合唯一约束、条件更新、事务行锁和幂等处理抑制重复执行。Worker 会恢复滞留任务、限制恢复次数，并在项目删除竞态中取消进行中的业务任务。
+- **受控 AI 上下文**：只向模型发送经过筛选、限量的目录、配置、测试和源码片段；AI 结果经过 Zod / Schema 校验，引用路径必须来自真实 `evidencePaths`。无效 JSON、虚构证据或上游失败会触发重试或 deterministic fallback。
+- **会话安全**：短期 JWT Access Token 配合 HttpOnly Refresh Cookie；Redis 保存服务端 Session 和 Refresh Token Hash，Refresh Token Rotation 通过 Lua 脚本原子执行，登出和修改密码可撤销会话。
 
-Worker 不会把整个项目无界发送给模型。代码审查上下文由受控的目录、入口、配置、测试与代表性源码片段组成，排除 `.git`、`node_modules`、构建目录和常见敏感目录；模型引用的路径必须来自允许的 `evidencePaths`，无效结构、虚构路径或与已知测试文件矛盾的结论会被拒绝。
+## 项目结构
 
-面试题同样绑定真实项目证据。面试报告使用服务端生成的加权 Rubric：AI Judge 只判定评分点是否覆盖并返回答案中的原句证据，最终分数由服务端计算。证据必须逐字存在于用户答案，低质量短答和关键词堆砌受分数上限约束；AI 输出无效或上游不可用时使用确定性评分回退。所有重要 AI 调用记录 provider、model、prompt/schema version、token/latency 和结果状态，但不记录 API Key。
+```text
+.
+├─ apps/
+│  ├─ web/                 # Next.js 页面、交互与 API 转发
+│  ├─ api/                 # NestJS API、认证与业务服务
+│  └─ worker/              # BullMQ Worker、AI 与项目分析
+├─ packages/
+│  └─ shared-types/        # 跨端类型与 Zod Schema
+├─ prisma/                 # Prisma Schema 与数据库测试
+├─ tests/e2e/              # Playwright MVP 端到端测试
+├─ docs/                   # 阅读、测试与生产部署文档
+├─ .github/workflows/      # CI 与镜像发布流程
+├─ docker-compose.yml      # 本地 PostgreSQL / Redis
+└─ docker-compose.prod.yml # 单机生产 Compose 基线
+```
 
-## 本地开发
+## 快速开始
 
-要求：Node.js 22、pnpm 11.7.0、Docker Engine / Docker Desktop。
+环境要求：Node.js 22、pnpm 11.7.0、Docker Engine 或 Docker Desktop。
+
+本地配置从 [`.env.example`](.env.example) 创建；生产配置入口为 [`.env.production.example`](.env.production.example)。请替换模板中的必要占位值，不要提交真实 `.env`、密钥或上传文件。
 
 ```powershell
 Copy-Item .env.example .env
@@ -72,120 +86,65 @@ pnpm install --frozen-lockfile
 pnpm infra:up
 pnpm db:generate
 pnpm db:deploy
+```
+
+分别启动 API、Worker 和 Web：
+
+```powershell
 pnpm api:dev
 pnpm worker:dev
 pnpm --filter @hirescope/web dev -- --port 4200
 ```
 
-默认示例使用 Web `4200`、API `4201`。若修改端口，必须同步调整 `.env` 中的 `API_PORT`、`CORS_ALLOWED_ORIGINS`，以及 Web 进程的 `API_ORIGIN`。
+默认本地地址为 Web `http://localhost:4200`、API `http://localhost:4201`。修改端口时需同步调整 `.env` 中的 API、CORS 和 Web 转发配置。
 
-## 生产镜像与自动部署
+常用数据库命令：
 
-这是一套单机 Docker Compose 发布基线，不包含云资源创建、域名、TLS 证书、监控平台或自动备份。GitHub Actions 在 `main` 通过完整验证后构建 `api`、`worker`、`web`、`migrate` 四个完整 SHA 镜像，同一次构建推送到杭州 ACR 和备用 GHCR；四个 ACR 镜像和摘要全部就绪后，独立生产工作流才使用 Production Environment SSH Secrets 连接服务器，并仅调用服务器现有部署脚本。GHCR 只保留为镜像备份，不参与自动部署或自动回退。
-
-1. 创建真实生产环境文件并设置仅属主可读权限：
-
-   ```bash
-   cp .env.production.example .env.production
-   chmod 600 .env.production
-   ```
-
-2. 替换全部示例占位值，包括 `replace_with_*` 和 `replace-with-private-bucket`；保证 `POSTGRES_PASSWORD` 与 `DATABASE_URL`、`REDIS_PASSWORD` 与 `REDIS_URL` 一致。URL 中的特殊字符必须进行 percent-encoding。OSS 应使用私有 Bucket 和仅允许头像对象读写的最小权限凭据。
-3. 直连公网 IP 时使用 `CORS_ALLOWED_ORIGINS=http://114.55.102.140:3000`、`AUTH_COOKIE_SECURE=false`、`AUTH_COOKIE_NAME=hirescope_refresh`、`TRUST_PROXY_HOPS=0` 和 `WEB_BIND_ADDRESS=0.0.0.0`。若改为 HTTPS 反向代理，则把 Origin 改为精确 HTTPS 地址，设置 `AUTH_COOKIE_SECURE=true`、使用 `__Secure-` Cookie 名，并让 `TRUST_PROXY_HOPS` 等于可信代理的实际跳数。
-4. 按 [`docs/production-deployment.md`](docs/production-deployment.md) 完成一次性部署文件安装、`.env.deploy` 配置和 ACR 登录。
-5. `main` 的成功 push 会自动触发受控生产部署。手动部署必须通过 `workflow_dispatch` 指定属于 `main`、已有成功 CI 且四个 ACR 镜像均已发布的完整 40 位 commit SHA：
-
-   ```bash
-   gh workflow run deploy-production.yml -f deploy_sha=<full-40-character-commit-sha>
-   ```
-
-   工作流不上传或覆盖任何生产环境文件，只执行 `sudo /opt/hirescope/.deploy/deploy-production.sh deploy <完整SHA>`。脚本只拉取 ACR 镜像，先执行 `migrate`；迁移成功后才重建 `api`、`worker`、`web`。服务器不执行 `docker build`、`docker compose build`、`pnpm build` 或 `pnpm deploy`，也不会强制重建 PostgreSQL、Redis 或 `storage-init`。
-
-6. 部署后检查容器状态、日志和公网版本端点：
-
-   ```bash
-   sudo docker ps --filter label=com.docker.compose.project=hirescope-ai
-   sudo docker logs --tail=200 "$(sudo docker ps -q --filter label=com.docker.compose.project=hirescope-ai --filter label=com.docker.compose.service=api)"
-   sudo docker logs --tail=200 "$(sudo docker ps -q --filter label=com.docker.compose.project=hirescope-ai --filter label=com.docker.compose.service=worker)"
-   sudo docker logs --tail=200 "$(sudo docker ps -q --filter label=com.docker.compose.project=hirescope-ai --filter label=com.docker.compose.service=web)"
-   curl -fsS -H 'Cache-Control: no-cache' 'https://<production-origin>/_version?deploy_sha=<commit-sha>'
-   curl -fsS -H 'Cache-Control: no-cache' 'https://<production-origin>/api/v1/version?deploy_sha=<commit-sha>'
-   ```
-
-升级前先备份 PostgreSQL、Redis AOF 和 `storage_data`。生产迁移仅由发布好的 `migrate` 镜像执行；不要运行 `prisma migrate dev`、`db:migrate` 或 `db:reset`。
-
-### 健康检查
-
-| 服务 | 检查方式 | 说明 |
-| --- | --- | --- |
-| PostgreSQL | `pg_isready` | 容器接受数据库连接 |
-| Redis | 带认证的 `redis-cli ping` | Redis 可用且密码匹配 |
-| API | 请求 `/api/v1/auth/me` | 未登录返回 `401` 仍表示 HTTP 进程存活；不等同于完整依赖就绪 |
-| Worker | PID 1 存活检查 | 配合 BullMQ 失败日志与任务积压监控；当前无独立 readiness 端点 |
-| Web | 请求 `/` | Next.js HTTP 服务可响应 |
-
-## 生产环境变量
-
-完整模板见 [`.env.production.example`](.env.production.example)。关键分组如下：
-
-| 分组 | 变量 |
-| --- | --- |
-| 暴露端口 | `WEB_BIND_ADDRESS`、`WEB_PORT` |
-| PostgreSQL | `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`DATABASE_URL` |
-| Redis / BullMQ | `REDIS_PASSWORD`、`REDIS_URL`、`REDIS_COMMAND_TIMEOUT_MS`、`TASK_QUEUE_NAME` |
-| 持久化与安全限额 | `STORAGE_ROOT`、`ZIP_MAX_*`、`ANALYSIS_MAX_TEXT_READ_BYTES` |
-| 任务恢复 | `TASK_RECOVERY_INTERVAL_MS`、`TASK_RECOVERY_BATCH_SIZE`、`TASK_RECOVERY_QUEUED_TIMEOUT_MS`、`TASK_RECOVERY_PROCESSING_TIMEOUT_MS`、`TASK_RECOVERY_MAX_ATTEMPTS` |
-| DeepSeek | `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` |
-| Aliyun OSS | `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_BUCKET`、`OSS_REGION`、`OSS_SIGNED_URL_TTL_SECONDS` |
-| API / 代理 | `NODE_ENV`、`API_HOST`、`API_PORT`、`API_ORIGIN`、`CORS_ALLOWED_ORIGINS`、`TRUST_PROXY_HOPS` |
-| Auth | `JWT_*`、`AUTH_REFRESH_*`、`AUTH_COOKIE_SECURE`、`AUTH_COOKIE_NAME`、`AUTH_DUMMY_PASSWORD_HASH`、`AUTH_ARGON2_*`、`AUTH_*_WINDOW_SECONDS`、`AUTH_*_MAX_REQUESTS` |
-
-`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` 必须同时设置。Cookie 安全策略由 `AUTH_COOKIE_SECURE` 显式控制，不再由 `NODE_ENV` 推断。HTTP Origin 必须显式包含端口，并搭配 `AUTH_COOKIE_SECURE=false` 和不带 `__Secure-` 前缀的 Cookie 名；CORS 始终使用精确白名单并保留凭据，禁止 `*`。HTTP 会明文传输会话流量，仅适合作为当前部署过渡方案。
-
-## 验证与测试
-
-当前基线为 `origin/main` 的 `5ac5949`。该提交的 GitHub Actions `Full validation` 已通过，覆盖：
-
-- Prisma Schema 校验与 Client 生成；
-- Shared Types、Web、API、Worker 单元测试；
-- Web lint/typecheck/build、API typecheck/build、Worker typecheck/build；
-- API E2E、Worker 集成、浏览器 MVP E2E；
-- PostgreSQL 数据库约束测试。
-
-本发布准备分支另行完成了以下本地验证：Shared Types `7` 项、API `89` 项、Web `139` 项、Worker `101` 项单元测试全部通过；Prisma Schema 校验、三端 typecheck/build 与 Web lint 通过（lint 保留 2 条既有 `<img>` 优化 warning，无 error）。生产 Compose 的 `migrate`、`api`、`worker`、`web` 四个镜像目标构建成功，实际应用 3 条 migration，并完成五个核心服务健康检查、共享存储写权限、首页 `200`、API 代理未登录 `401`；Web 容器未注入数据库、Redis、JWT、Refresh、DeepSeek 或 OSS 密钥。
-
-发布前建议至少执行：
-
-```bash
+```powershell
 pnpm db:validate
-pnpm --filter @hirescope/shared-types test
-pnpm --filter @hirescope/web lint
-pnpm --filter @hirescope/web typecheck
+pnpm db:generate
+pnpm db:deploy
+
+生产环境只使用 `pnpm db:deploy`，不得运行 `db:migrate` 或 `db:reset`。
+
+## 测试
+
+| 范围 | 说明 |
+| --- | --- |
+| 单元测试 | Vitest 覆盖 Shared Types、Web、API 与 Worker |
+| API E2E | Supertest 验证 HTTP、认证、权限与业务接口 |
+| Worker Integration | 在隔离 PostgreSQL/Redis 环境验证队列处理与持久化 |
+| 浏览器 E2E | Playwright 覆盖 User 端核心 MVP 流程 |
+| 数据库约束 | 验证 PostgreSQL 唯一约束、关联约束与并发边界 |
+
+常用测试命令：
+
+```powershell
 pnpm --filter @hirescope/web test
-pnpm --filter @hirescope/web build
-pnpm api:typecheck
 pnpm api:test
-pnpm api:build
-pnpm worker:typecheck
 pnpm worker:test
-pnpm worker:build
-node .github/scripts/validate-deployment-contract.mjs
-bash -n .github/scripts/deploy-production.sh
+pnpm api:test:e2e
+pnpm worker:test:integration
+pnpm test:e2e
+pnpm db:test
 ```
 
-需要真实 PostgreSQL、Redis 或浏览器的 E2E / 集成测试按 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 的隔离测试环境执行。
+API E2E、Worker Integration、Playwright 和数据库约束测试会使用 PostgreSQL/Redis；运行前应确认连接的是隔离测试环境。
 
-## 截图位置
+GitHub Actions 会在 Pull Request 和 `main` 推送时执行完整验证；只有包含生产运行时变更的 `main` 推送才会继续构建应用镜像并部署，纯文档和已确认的本地开发入口修改会跳过生产发布链。生产发布策略与操作边界见 [生产部署文档](docs/production-deployment.md)。
 
-- 自动化验收截图：[`tests/e2e/screenshots`](tests/e2e/screenshots)
-- 首页、工作台、产品能力、流程、报告等设计参考：[`imgs`](imgs)
+## 相关文档
 
-当前自动化截图包括浅色面试报告、深色面试报告和报告失败重试状态。截图是验收证据，不进入生产镜像。
+- [生产部署](docs/production-deployment.md)
+- [生产 Smoke Test](docs/smoke-test.md)
+- [本地环境变量模板](.env.example)
+- [生产环境变量模板](.env.production.example)
+- [CI 工作流](.github/workflows/ci.yml)
 
-## 安全与运维边界
+## 当前限制
 
-- `.env`、`.env.production`、上传文件、日志、构建产物、测试产物和本地 Codex 文件均被忽略；提交前仍需执行密钥扫描。
-- PostgreSQL、Redis 和 API 不发布宿主机端口；只允许 Web 经可信 TLS 反向代理对外服务。
-- Compose 提供命名卷，但不提供备份、跨主机高可用、集中日志、指标告警和密钥管理。生产使用时应接入组织现有设施。
-- DeepSeek Key、JWT Secret、Refresh Hash Secret、数据库密码和 Redis 密码必须由部署平台注入，不得写入镜像、Compose 或 Git。
-- User 端 MVP 不包含 Admin / Interviewer 后台，也不应从本发布准备分支扩展业务范围。
+- 当前仅实现 User 端 MVP，不包含 Admin 或 Interviewer 后台。
+- 当前以 PC 桌面端为目标，未实现移动端和平板端适配。
+- 生产基线为单机 Docker Compose，不包含云资源创建、TLS 证书、集中监控、自动备份或托管密钥方案。
+- Worker 当前没有独立 readiness 端点，运行状态需结合进程、任务积压和失败日志判断。
+- AI 能力依赖正确配置的模型服务；deterministic fallback 用于保证可解释的降级结果，不等同于在线模型质量。
