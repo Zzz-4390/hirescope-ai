@@ -1,0 +1,260 @@
+name: Deploy production
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_sha:
+        description: Full 40-character commit SHA from main to deploy
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate immutable ACR deployment
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      deploy_sha: ${{ steps.provenance.outputs.deploy_sha }}
+      ci_run_id: ${{ steps.provenance.outputs.ci_run_id }}
+
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate SHA and successful main CI provenance
+        id: provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_DEPLOY_SHA: ${{ inputs.deploy_sha }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -Eeuo pipefail
+          git fetch --force --prune --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          remote_main_tip="$(git rev-parse origin/main)"
+
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
+            [[ "$RUN_CONCLUSION" == success ]]
+            [[ "$RUN_EVENT" == push ]]
+            [[ "$RUN_HEAD_BRANCH" == main ]]
+            [[ "$RUN_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]]
+            deploy_sha="${RUN_HEAD_SHA,,}"
+            ci_run_id="$RUN_ID"
+            [[ "$deploy_sha" == "$remote_main_tip" ]] || {
+              echo "Refusing stale automatic deployment: CI SHA is not the current main tip." >&2
+              exit 1
+            }
+          else
+            deploy_sha="$MANUAL_DEPLOY_SHA"
+          fi
+
+          [[ "$deploy_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "deploy_sha must be a full 40-character commit SHA." >&2
+            exit 1
+          }
+          git cat-file -e "${deploy_sha}^{commit}"
+          git merge-base --is-ancestor "$deploy_sha" origin/main || {
+            echo "deploy_sha is not contained in main." >&2
+            exit 1
+          }
+
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            successful_runs="$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+              -f branch=main \
+              -f event=push \
+              -f status=success \
+              -f head_sha="$deploy_sha" \
+              -f per_page=100)"
+            if ! ci_run_id="$(jq -er --arg sha "$deploy_sha" --arg repository "$GITHUB_REPOSITORY" '
+              .workflow_runs
+              | map(select(
+                  .head_sha == $sha and
+                  .head_branch == "main" and
+                  .event == "push" and
+                  .conclusion == "success" and
+                  .head_repository.full_name == $repository
+                ))
+              | sort_by(.run_attempt)
+              | last
+              | .id
+            ' <<< "$successful_runs")"; then
+              echo "No successful same-repository push-main CI run exists for deploy_sha." >&2
+              exit 1
+            fi
+          fi
+
+          [[ "$ci_run_id" =~ ^[0-9]+$ ]]
+          printf 'deploy_sha=%s\n' "$deploy_sha" >> "$GITHUB_OUTPUT"
+          printf 'ci_run_id=%s\n' "$ci_run_id" >> "$GITHUB_OUTPUT"
+          printf 'Validated deployment SHA: `%s`\n' "$deploy_sha" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate ACR configuration
+        shell: bash
+        env:
+          ACR_PUBLIC_REGISTRY: ${{ vars.ACR_PUBLIC_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$ACR_PUBLIC_REGISTRY" =~ ^[a-z0-9.-]+(:[0-9]+)?$ ]] || {
+            echo "ACR_PUBLIC_REGISTRY must be an exact Registry domain." >&2
+            exit 1
+          }
+          [[ "$ACR_NAMESPACE" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]] || {
+            echo "ACR_NAMESPACE is invalid." >&2
+            exit 1
+          }
+
+      - name: Require the successful CI image publication artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACR_PUBLIC_REGISTRY: ${{ vars.ACR_PUBLIC_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
+          DEPLOY_SHA: ${{ steps.provenance.outputs.deploy_sha }}
+          CI_RUN_ID: ${{ steps.provenance.outputs.ci_run_id }}
+        run: |
+          set -Eeuo pipefail
+          digest_dir="$RUNNER_TEMP/production-image-digests"
+          install -d -m 700 "$digest_dir"
+          gh run download "$CI_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "production-image-digests-$DEPLOY_SHA" \
+            --dir "$digest_dir"
+
+          printf '### Production ACR image gate\n\n' >> "$GITHUB_STEP_SUMMARY"
+          for service in api worker web migrate; do
+            record="$digest_dir/$service-digest.txt"
+            test -s "$record"
+            grep -Eq \
+              "^${service}_acr=${ACR_PUBLIC_REGISTRY}/${ACR_NAMESPACE}/${service}@sha256:[0-9a-f]{64}$" \
+              "$record"
+            digest_record="$(grep -E "^${service}_acr=" "$record")"
+            printf -- '- `%s`\n' "$digest_record" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  deploy:
+    name: Deploy validated SHA to production
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    env:
+      DEPLOY_SHA: ${{ needs.validate.outputs.deploy_sha }}
+
+    steps:
+      - name: Configure strict SSH
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$PROD_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$PROD_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$PROD_PORT" =~ ^[0-9]{1,5}$ ]]
+          (( 10#$PROD_PORT >= 1 && 10#$PROD_PORT <= 65535 ))
+
+          umask 077
+          ssh_dir="$RUNNER_TEMP/hirescope-ssh"
+          install -d -m 700 "$ssh_dir"
+          printf '%s\n' "$PROD_SSH_PRIVATE_KEY" > "$ssh_dir/deploy_key"
+          printf '%s\n' "$PROD_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          test -s "$ssh_dir/known_hosts"
+          ssh-keygen -y -f "$ssh_dir/deploy_key" >/dev/null
+
+          {
+            printf 'Host production\n'
+            printf '  HostName %s\n' "$PROD_HOST"
+            printf '  User %s\n' "$PROD_USER"
+            printf '  Port %s\n' "$PROD_PORT"
+            printf '  IdentityFile %s\n' "$ssh_dir/deploy_key"
+            printf '  UserKnownHostsFile %s\n' "$ssh_dir/known_hosts"
+            printf '  StrictHostKeyChecking yes\n'
+            printf '  BatchMode yes\n'
+            printf '  IdentitiesOnly yes\n'
+            printf '  ConnectTimeout 15\n'
+            printf '  ServerAliveInterval 15\n'
+            printf '  ServerAliveCountMax 3\n'
+            printf '  LogLevel ERROR\n'
+          } > "$ssh_dir/config"
+          chmod 600 "$ssh_dir/deploy_key" "$ssh_dir/known_hosts" "$ssh_dir/config"
+
+      - name: Run existing production deployment script
+        id: deploy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production \
+            "sudo /opt/hirescope/.deploy/deploy-production.sh deploy '$DEPLOY_SHA'"
+
+      - name: Report bounded diagnostics after deployment failure
+        if: failure() && steps.deploy.outcome == 'failure'
+        shell: bash
+        run: |
+          ssh -F "$RUNNER_TEMP/hirescope-ssh/config" production 'bash -s' <<'REMOTE'
+          set -u
+          echo 'Application container status:'
+          for service in api worker web; do
+            container_id="$(sudo docker ps -aq \
+              --filter label=com.docker.compose.project=hirescope-ai \
+              --filter "label=com.docker.compose.service=$service" | head -n 1)"
+            if [[ -z "$container_id" ]]; then
+              printf 'service=%s container=missing\n' "$service"
+              continue
+            fi
+            sudo docker inspect --format \
+              "service=$service status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restart={{.RestartCount}} image={{.Config.Image}}" \
+              "$container_id"
+          done
+
+          echo 'Bounded application logs:'
+          for service in api worker web; do
+            container_id="$(sudo docker ps -aq \
+              --filter label=com.docker.compose.project=hirescope-ai \
+              --filter "label=com.docker.compose.service=$service" | head -n 1)"
+            [[ -n "$container_id" ]] || continue
+            printf '%s\n' "--- $service (last 80 lines) ---"
+            sudo docker logs --timestamps --tail 80 "$container_id" 2>&1 \
+              | sed -E \
+                  -e 's#(postgres(ql)?|redis)://[^[:space:]]+#<redacted-url>#gI' \
+                  -e '/password|secret|token|authorization|cookie|private.?key|access.?key|api.?key/Id' \
+              | cut -c 1-500
+          done
+          REMOTE
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/hirescope-ssh"

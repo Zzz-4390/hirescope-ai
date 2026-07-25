@@ -38,7 +38,7 @@ export class InterviewQuestionProcessor {
     if (TERMINAL.has(task.status)) return;
     if (task.status === TaskStatus.PENDING) throw new Error('TASK_NOT_READY');
     if (!await this.claim(task.id, task.interviewId, task.projectId)) return;
-    if (!task.project.analysis) return this.fail(task.id, task.interviewId, 'PROJECT_ANALYSIS_MISSING');
+    if (!task.project.analysis) return this.fail(task.id, task.interviewId, task.projectId, 'PROJECT_ANALYSIS_MISSING');
 
     let evidence: InterviewQuestionEvidenceContext;
     try {
@@ -46,7 +46,7 @@ export class InterviewQuestionProcessor {
       evidence = restrictInterviewQuestionEvidence(await this.contextBuilder.build(this.paths.resolveStoredPath(task.project.extractStoragePath), task.project.analysis));
       if (evidence.evidencePaths.length === 0) throw new Error('INTERVIEW_QUESTION_EVIDENCE_MISSING');
     } catch {
-      return this.fail(task.id, task.interviewId, 'INTERVIEW_QUESTION_EVIDENCE_MISSING');
+      return this.fail(task.id, task.interviewId, task.projectId, 'INTERVIEW_QUESTION_EVIDENCE_MISSING');
     }
 
     const questionCount = task.interview.questionCount;
@@ -62,18 +62,18 @@ export class InterviewQuestionProcessor {
         evidence,
       );
     } catch (error) {
-      return this.fail(task.id, task.interviewId, error instanceof InterviewQuestionGenerationError ? error.code : 'INTERVIEW_QUESTION_GENERATION_FAILED');
+      return this.fail(task.id, task.interviewId, task.projectId, error instanceof InterviewQuestionGenerationError ? error.code : 'INTERVIEW_QUESTION_GENERATION_FAILED');
     }
 
     const parsed = InterviewQuestionsResultSchema.safeParse(candidate);
     const valid = parsed.success
       && parsed.data.questions.length === questionCount
       && parsed.data.questions.every((question, index) => question.sequence === index + 1 && question.difficulty === difficulty);
-    if (!valid || !parsed.success) return this.fail(task.id, task.interviewId, 'INTERVIEW_QUESTIONS_RESULT_INVALID');
+    if (!valid || !parsed.success) return this.fail(task.id, task.interviewId, task.projectId, 'INTERVIEW_QUESTIONS_RESULT_INVALID');
     try {
       validateInterviewQuestionEvidence(parsed.data, evidence);
     } catch {
-      return this.fail(task.id, task.interviewId, 'INTERVIEW_QUESTIONS_EVIDENCE_INVALID');
+      return this.fail(task.id, task.interviewId, task.projectId, 'INTERVIEW_QUESTIONS_EVIDENCE_INVALID');
     }
     await this.finish(task.id, task.interviewId, task.projectId, parsed.data);
   }
@@ -83,7 +83,7 @@ export class InterviewQuestionProcessor {
       const locked = await lock(tx, taskId, interviewId, projectId);
       if (!locked) throw new Error('TASK_NOT_FOUND');
       if (locked.interviewStatus === InterviewStatus.READY) return false;
-      if (deleting(locked.projectStatus)) { await cancelTask(tx, taskId); return false; }
+      if (deleting(locked.projectStatus)) { await cancelTask(tx, taskId, interviewId); return false; }
       if (locked.projectStatus !== ProjectStatus.COMPLETED) { await failRows(tx, taskId, interviewId, 'PROJECT_NOT_READY'); return false; }
       const claimed = await tx.asyncTask.updateMany({ where: { id: taskId, type: TaskType.INTERVIEW_QUESTION_GENERATION, status: TaskStatus.QUEUED }, data: { status: TaskStatus.PROCESSING, progress: 5, attempts: { increment: 1 }, startedAt: new Date() } });
       return claimed.count === 1;
@@ -95,7 +95,7 @@ export class InterviewQuestionProcessor {
       const locked = await lock(tx, taskId, interviewId, projectId);
       if (!locked) throw new Error('TASK_NOT_FOUND');
       if (locked.interviewStatus === InterviewStatus.READY) return;
-      if (deleting(locked.projectStatus)) return cancelTask(tx, taskId);
+      if (deleting(locked.projectStatus)) return cancelTask(tx, taskId, interviewId);
       if (locked.projectStatus !== ProjectStatus.COMPLETED) return failRows(tx, taskId, interviewId, 'PROJECT_NOT_READY');
       await tx.interviewQuestion.createMany({
         data: result.questions.map((question) => ({
@@ -112,8 +112,13 @@ export class InterviewQuestionProcessor {
     });
   }
 
-  private fail(taskId: string, interviewId: string, code: string): Promise<void> {
-    return this.prisma.$transaction((tx) => failRows(tx, taskId, interviewId, code));
+  private fail(taskId: string, interviewId: string, projectId: string, code: string): Promise<void> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await lock(tx, taskId, interviewId, projectId);
+      if (!locked) throw new Error('TASK_NOT_FOUND');
+      if (deleting(locked.projectStatus)) return cancelTask(tx, taskId, interviewId);
+      await failRows(tx, taskId, interviewId, code);
+    });
   }
 }
 
@@ -122,7 +127,11 @@ async function lock(tx: Prisma.TransactionClient, taskId: string, interviewId: s
   const rows = await tx.$queryRaw<Locked[]>(Prisma.sql`SELECT i.status AS "interviewStatus", p.status AS "projectStatus" FROM async_tasks t JOIN interviews i ON i.id = t.interview_id JOIN projects p ON p.id = t.project_id WHERE t.id = ${taskId}::uuid AND i.id = ${interviewId}::uuid AND p.id = ${projectId}::uuid FOR UPDATE OF t, i, p`);
   return rows[0] ?? null;
 }
-async function cancelTask(tx: Prisma.TransactionClient, taskId: string) {
+async function cancelTask(tx: Prisma.TransactionClient, taskId: string, interviewId: string) {
+  await tx.interview.updateMany({
+    where: { id: interviewId, status: InterviewStatus.GENERATING },
+    data: { status: InterviewStatus.FAILED, failureCode: 'RESOURCE_DELETING', failureMessage: '项目正在删除', completedAt: new Date() },
+  });
   await tx.asyncTask.update({ where: { id: taskId }, data: { status: TaskStatus.CANCELLED, failureCode: 'RESOURCE_DELETING', failureMessage: '项目正在删除', completedAt: new Date() } });
 }
 async function failRows(tx: Prisma.TransactionClient, taskId: string, interviewId: string, code: string) {

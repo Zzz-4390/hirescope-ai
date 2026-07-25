@@ -22,7 +22,7 @@ export class CodeReviewProcessor {
     if (TERMINAL.has(task.status)) return;
     if (task.status === TaskStatus.PENDING) throw new Error('TASK_NOT_READY');
     if (!(await this.claim(task.id, task.codeReviewId, task.projectId))) return;
-    if (!task.project.analysis) return this.fail(task.id, task.codeReviewId, 'PROJECT_ANALYSIS_MISSING');
+    if (!task.project.analysis) return this.fail(task.id, task.codeReviewId, task.projectId, 'PROJECT_ANALYSIS_MISSING');
     let generated: GeneratedCodeReview;
     try {
       const evidence = task.project.extractStoragePath && this.paths && this.contextBuilder
@@ -30,9 +30,9 @@ export class CodeReviewProcessor {
         : undefined;
       generated = await this.reviewer.review(task.project.analysis, { userId: task.userId, projectId: task.projectId, taskId: task.id }, evidence);
     }
-    catch (error) { return this.fail(task.id, task.codeReviewId, error instanceof CodeReviewGenerationError ? error.code : 'CODE_REVIEW_GENERATION_FAILED'); }
+    catch (error) { return this.fail(task.id, task.codeReviewId, task.projectId, error instanceof CodeReviewGenerationError ? error.code : 'CODE_REVIEW_GENERATION_FAILED'); }
     const parsed = CodeReviewResultSchema.safeParse(generated.result);
-    if (!parsed.success || typeof generated.summary !== 'string' || generated.summary.length === 0 || !Number.isInteger(generated.score) || generated.score < 0 || generated.score > 100 || typeof generated.model !== 'string' || generated.model.length === 0 || generated.model.length > 100) return this.fail(task.id, task.codeReviewId, 'CODE_REVIEW_RESULT_INVALID');
+    if (!parsed.success || typeof generated.summary !== 'string' || generated.summary.length === 0 || !Number.isInteger(generated.score) || generated.score < 0 || generated.score > 100 || typeof generated.model !== 'string' || generated.model.length === 0 || generated.model.length > 100) return this.fail(task.id, task.codeReviewId, task.projectId, 'CODE_REVIEW_RESULT_INVALID');
     await this.finish(task.id, task.codeReviewId, task.projectId, { ...generated, result: parsed.data });
   }
   private claim(taskId: string, reviewId: string, projectId: string): Promise<boolean> {
@@ -56,7 +56,14 @@ export class CodeReviewProcessor {
       await tx.asyncTask.update({ where: { id: taskId }, data: { status: TaskStatus.SUCCEEDED, progress: 100, failureCode: null, failureMessage: null, completedAt } });
     });
   }
-  private fail(taskId: string, reviewId: string, code: string): Promise<void> { return this.prisma.$transaction((tx) => failRows(tx, taskId, reviewId, code)); }
+  private fail(taskId: string, reviewId: string, projectId: string, code: string): Promise<void> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await lock(tx, reviewId, projectId);
+      if (!locked) throw new Error('TASK_NOT_FOUND');
+      if (deleting(locked.projectStatus)) return cancel(tx, taskId, reviewId);
+      await failRows(tx, taskId, reviewId, code);
+    });
+  }
 }
 function deleting(status: ProjectStatus) { return status === ProjectStatus.DELETING || status === ProjectStatus.DELETED; }
 async function lock(tx: Prisma.TransactionClient, reviewId: string, projectId: string): Promise<Locked | null> { const rows = await tx.$queryRaw<Locked[]>(Prisma.sql`SELECT cr.status AS "reviewStatus", p.status AS "projectStatus" FROM code_reviews cr JOIN projects p ON p.id = cr.project_id WHERE cr.id = ${reviewId}::uuid AND p.id = ${projectId}::uuid FOR UPDATE OF cr, p`); return rows[0] ?? null; }

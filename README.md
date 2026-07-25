@@ -104,7 +104,6 @@ pnpm --filter @hirescope/web dev -- --port 4200
 pnpm db:validate
 pnpm db:generate
 pnpm db:deploy
-```
 
 生产环境只使用 `pnpm db:deploy`，不得运行 `db:migrate` 或 `db:reset`。
 
