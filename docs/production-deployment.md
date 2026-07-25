@@ -4,7 +4,7 @@ Production deployment is image-based and immutable. GitHub Actions publishes the
 
 ## Image publication
 
-After `Full validation` succeeds for a push to `main`, the `publish-images` matrix builds `api`, `worker`, `web`, and `migrate`. Each matrix job builds its target once and pushes the same full 40-character commit SHA tag to both registries:
+Every Pull Request and push to `main` still runs `Full validation`. A separate changed-path job classifies whether the commit contains a production runtime change. After validation succeeds for a runtime-changing push to `main`, the `publish-images` matrix builds `api`, `worker`, `web`, and `migrate`. Documentation-only changes and the reviewed Windows/local-development entrypoints do not publish images. Each matrix job builds its target once and pushes the same full 40-character commit SHA tag to both registries:
 
 ```text
 <ACR_PUBLIC_REGISTRY>/<ACR_NAMESPACE>/api:<commit_sha>
@@ -29,9 +29,9 @@ The workflow uses these repository settings:
 
 ## Automatic CD
 
-`.github/workflows/deploy-production.yml` is triggered after `CI` completes. Automatic deployment is accepted only for a successful same-repository push to `main`, and uses that run's full 40-character `head_sha`. A stale automatic run is rejected when its SHA is no longer the current `main` tip.
+`.github/workflows/deploy-production.yml` starts for production-relevant pushes to `main`; its trigger ignores the same reviewed documentation and local-development-only paths as the CI classifier. This path filter is limited to CD: the required `CI / Full validation` check remains unfiltered for Pull Requests and `main`. The deployment workflow waits for the exact same-SHA `CI` run to finish successfully, which requires `Full validation`, all four image publication jobs, and the combined digest job. A stale automatic run is rejected if `main` advances while it waits.
 
-The validation job checks that the SHA is contained in `main`, binds it to the exact successful CI run ID, and downloads that run's `production-image-digests-<sha>` artifact. It requires valid ACR digest records for `api`, `worker`, `web`, and `migrate`. Because `CI` succeeds only after `Full validation`, all four ACR/GHCR publication matrix jobs, and the combined digest job succeed, deployment cannot start before all four ACR images have been published. The CD workflow does not receive ACR push credentials; the server uses its existing pull login.
+The validation job checks that the SHA is contained in `main`, binds it to the exact successful CI run ID, and downloads that run's `production-image-digests-<sha>` artifact. It requires valid ACR digest records for `api`, `worker`, `web`, and `migrate`. Deployment cannot start before all four ACR images have been published. The CD workflow does not receive ACR push credentials; the server uses its existing pull login.
 
 The deployment job uses the existing `production` GitHub Production environment and these environment Secrets:
 

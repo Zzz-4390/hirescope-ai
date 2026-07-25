@@ -131,7 +131,7 @@ pnpm db:test
 
 API E2E、Worker Integration、Playwright 和数据库约束测试会使用 PostgreSQL/Redis；运行前应确认连接的是隔离测试环境。
 
-GitHub Actions 会在 Pull Request 和 `main` 推送时执行完整验证，并在验证通过后构建应用镜像。生产发布策略与操作边界见 [生产部署文档](docs/production-deployment.md)。
+GitHub Actions 会在 Pull Request 和 `main` 推送时执行完整验证；只有包含生产运行时变更的 `main` 推送才会继续构建应用镜像并部署，纯文档和已确认的本地开发入口修改会跳过生产发布链。生产发布策略与操作边界见 [生产部署文档](docs/production-deployment.md)。
 
 ## 相关文档
 
